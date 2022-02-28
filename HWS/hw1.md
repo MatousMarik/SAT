@@ -19,7 +19,7 @@ $$\forall i,j: \forall k > j: \neg x_{i,j} \vee \neg x_{i,k}$$
 5. Na sousedních pozicích v cyklu můžou být pouze vrcholy spojené hranou:
    - Pro přehlednost pracuji s následujícími předpoklady:
      - $(j,k)$ se v tomto případě chová jako uspořádaná dvojice, tedy pokud není definována hrana $(j,k)$, pak vzniká podmínka pro $(j,k)$ i pro $(k,j)$
-     - $|V|+1 = 1$
+     - $|V|+1 = 1$ (pro uzavření cyklu)
        - Tento problém by šel také vyřešit přidáním poslední pozice, na které by musel být stejný vrchol jako na první pozici a na kterou by se nevztahovala podmínka 3
 $$\forall (j,k) \notin E: \neg x_{i,j} \vee \neg x_{i+1,k},\ i=1..|V|$$
 
