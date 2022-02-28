@@ -1,4 +1,5 @@
 # Hamiltonský cyklus
+##### Matouš Mařík
     Let G = (V, E) be an undirected graph. Suggest a propositional formula that is satisfi-
     able it and only if G contains a Hamiltonian cycle.
 
