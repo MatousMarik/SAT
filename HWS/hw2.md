@@ -9,12 +9,14 @@
 - $l$ ... blokující literál $C$
 - pokud φ obsahuje pouze jednu klauzuli $C$ pak $\varphi$ je vždy splněna a neprázdná $C$ je vždy splnitelná
 - $l_D$... literál $C \ \backslash \ \{l\}$, pro který platí $\neg l_D \in D$
-- pokud $\varphi \ \backslash \ \{C\}$ je splnitelná, pak existuje model $a$, takový, že:
-  - buď $l \in a$ => $a \models C$ => $\varphi$ je splnitelná
-  - nebo $\neg l \in a$
-    - potom existuje nějaký $l_D \in a$ => $a \models C$
-      - jinak by v každá klauzule $D \in \varphi \ \backslash \ \{C\}$ obsahovala nějaký literál $l_{D,a} \neq \neg l$
-      - a tedy model $a' = a \cap \{l\} \backslash \{\neg l\}$ (tedy model, který se od $a$ liší tím, že místo $\neg l$ obsahuje $l$), splňuje jak $C$, tak $\varphi \ \backslash \ \{C\}$
+- pokud $\varphi \ \backslash \ \{C\}$ je splnitelná, pak existuje model (který je úplné ohodnocení všech literálů $\varphi$) $a$, takový, že:
+  1. buď $a(l) = 1$ => $a \models C$ => $\varphi$ je splnitelná
+  2. nebo $a(l) = 0$
+     - existuje-li nějaký $l_D \in a$ pak $a \models C$
+     - --
+     - jinak by pro všechny $D \in \varphi \ \backslash \ \{C\}$ jejich literál $\neg l_D$ (literál vyplývající z tautologie vznikající rezolucí, definovaný výše) byl v $a$, tedy $a(l_D) = 0$
+     - a tedy model $a'$ t.ž. pro každý literál $l' \neq l$ platí $a'(l') = a(l')$ a zároveň $a'(l) = 1$ (tedy model, který se od $a$ liší tím, že místo $\neg l$ obsahuje $l$), splňuje jak $C$, tak $\varphi \ \backslash \ \{C\}$
+     - tedy $a'$ splňuje bod 1.
 
 
 
