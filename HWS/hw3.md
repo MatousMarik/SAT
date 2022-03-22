@@ -19,13 +19,16 @@
 ## Splnitelná $\varphi' \implies$ splnitelná $\varphi$
 - jsou splnitelné $\varphi_r \land \varphi_{dp}$, je třeba dokázat, že z toho vyplývá, že jsou splnitelné $\varphi_0 \land \varphi_1$
 - $\alpha'$ je úplný model splňující $\varphi'$, který neobsahuje proměnnou $x$
-- nechť $C_n$ je jakákoliv z klauzulí $C_0 \backslash \lbrace \neg x \rbrace$ (kde $C_0 \in \varphi_0$ ze zadání), nebo z klauzulí $C_1 \backslash \lbrace x \rbrace$ (kde $C_1 \in \varphi_1$ ze zadání), která není modelem $\alpha'$ splněna
-  - pro zbytek bodů BÚNO nechť $C_n \in \varphi_0$
-##
-- protože $\alpha' \models \varphi' \implies \alpha' \models \varphi_{dp}$, pak $\text{Res}(C_n, C_1)$ jsou modelem splněny pro všechny $C_1 \in \varphi_1$
-- protože $\alpha' \not \models C_n$, pak musí platit $\alpha' \models C_1 \backslash \lbrace x \rbrace$ a to pro všechny takové klauzule, z čehož vyplývá, že platí $\alpha' \models \varphi_1$
+  - triviálně $\alpha' \models \varphi_r$
+- nechť $C_n$ je jakákoliv z klauzulí $C_0 \backslash \lbrace \neg x \rbrace$ (kde $C_0 \in \varphi_0$ ze zadání), nebo z klauzulí $C_1 \backslash \lbrace x \rbrace$ (kde $C_1 \in \varphi_1$ ze zadání), která <ins>není</ins> modelem $\alpha'$ splněna
+  - pokud takovou klauzuli nelze najít, pak $\alpha' \models \varphi_0 \land \varphi_1$
+  - pro zbytek bodů se BÚNO předpokládá, že $C_n \equiv C_{n,0} \backslash \lbrace \neg x \rbrace$, kde $C_{n,0}$ je nějaká konkrétní $C_0 \in \varphi_0$
+---
+- protože $\alpha' \models \varphi' \implies \alpha' \models \varphi_{dp}$, pak $\text{Res}(C_{n,0}, C_1)$ jsou modelem splněny pro všechny $C_1 \in \varphi_1$
+- protože $\alpha' \not \models C_n$ (protože tak byla vybrána $C_n$), pak musí platit $\alpha' \models C_1 \backslash \lbrace x \rbrace$ a to pro všechny $C_1 \in \varphi_1$, z čehož vyplývá, že platí $\alpha' \models \varphi_1$
 - model $\alpha$ který vznikne rozšířením modelu $\alpha'$ tak, že $\alpha(x)=0$ splňuje $\varphi$  
   - protože model $\alpha$ obsahující $\neg x$ splní všechny klauzule z $\varphi_0$
+  - díky CNF tvaru formule rozšířený model určitě splňuje všechny klauzule, které splňoval původní model
 
 
 <!--
