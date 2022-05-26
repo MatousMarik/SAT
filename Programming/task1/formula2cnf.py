@@ -193,7 +193,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args(
         [r"C:\Users\Maty\Documents\LS_21-22\SAT\Programming\task1\nested_5.sat"]
-    )  # None)
+    )  # TODO: None)
 
     if args.input is None:
         string = sys.stdin.read()
@@ -201,5 +201,10 @@ if __name__ == "__main__":
         with open(args.input, "r") as f:
             string = f.read()
 
-    print(string)
-    print(formula2cnf(string, args.equivalences))
+    result = formula2cnf(string, args.equivalences)
+
+    if args.output is None:
+        print(result)
+    else:
+        with open(args.output, "w") as f:
+            f.write(result)
