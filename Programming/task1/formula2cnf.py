@@ -19,17 +19,6 @@ class ETokens:
     NOT = -5
 
     map = {"(": L_PAR, ")": R_PAR, "and": AND, "or": OR, "not": NOT}
-    inv_map = {v: k for k, v in map.items()}
-
-    @classmethod
-    def to_str(cls, token: int) -> str:
-        """Return name of the token, for variable tokens return "variable"."""
-        if token > 0:
-            return "variable"
-        if token in cls.inv_map:
-            return cls.inv_map[token]
-        else:
-            raise RuntimeError("Invalid token.")
 
 
 def translate(string: str) -> tuple[list[int], dict[str, int]]:
@@ -89,18 +78,6 @@ class EAwaitedType:
     AND_OR_OR = 3
     L = 4
 
-    expected_map = {
-        1: [1, ETokens.R_PAR],
-        2: [1, ETokens.R_PAR, ETokens.NOT],
-        3: [ETokens.AND, ETokens.OR],
-        4: [ETokens.L_PAR],
-    }
-
-    @classmethod
-    def expected_names(cls, type: int) -> str:
-        """Get names of expected tokens at given state."""
-        return ", ".join(map(ETokens.to_str, cls.expected_map[type]))
-
 
 def parse2cnf(
     stream: list[int], max_var: int, equivalences: bool
@@ -147,9 +124,7 @@ def parse2cnf(
                 # token is right bracket
                 rec_s.append(EAT.VAR_OR_R_OR_NOT)
             else:
-                raise RuntimeError(
-                    f"Unexpected token; found: {ETokens.to_str(token)}, expected: {EAwaitedType.expected_names(state)}."
-                )
+                raise RuntimeError("Unexpected token.")
 
         # awaited variable, right bracket or not - second position from right
         elif state == EAT.VAR_OR_R_OR_NOT:
@@ -168,9 +143,7 @@ def parse2cnf(
                 stack.append(-stack.pop())
                 state = EAT.L
             else:
-                raise RuntimeError(
-                    f"Unexpected token; found: {ETokens.to_str(token)}, expected: {EAwaitedType.expected_names(state)}."
-                )
+                raise RuntimeError("Unexpected token.")
 
         # awaited "and" or "or" tokens  - most left position between parentheses
         elif state == EAT.AND_OR_OR:
@@ -218,9 +191,7 @@ def parse2cnf(
                 stack.append(next_gate_index)
                 next_gate_index += 1
             else:
-                raise RuntimeError(
-                    f"Unexpected token; found: {ETokens.to_str(token)}, expected: {EAwaitedType.expected_names(state)}."
-                )
+                raise RuntimeError("Unexpected token.")
             state = EAT.L
 
         # awaited left parenthesis
@@ -228,9 +199,7 @@ def parse2cnf(
             if token == ETokens.L_PAR:
                 state = rec_s.pop()
             else:
-                raise RuntimeError(
-                    f"Unexpected token; found: {ETokens.to_str(token)}, expected: {EAwaitedType.expected_names(state)}."
-                )
+                raise RuntimeError("Unexpected token.")
         else:
             raise RuntimeError("Unrecognized state.")
 
@@ -242,7 +211,7 @@ def parse2cnf(
             return [(1,)], -1
         elif root > last_var:
             return cnf, root
-    raise RuntimeError(f"Invalid formula.")
+    raise RuntimeError("Invalid formula.")
 
 
 def to_str(
