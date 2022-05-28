@@ -24,7 +24,7 @@ Pro každou možnou hodnotu proměnné $v_i$ je vytvořena podmínka na hodnotu 
 
 ### Podmínka $v_i - v_j \le c$
 - podmínka je nejdříve převedena do tvaru $v_i \le v_j + c$ (plus definováno, díky výskytu další podmínky)
-  $$\forall d_1 \in D: \bigwedge_{\substack{d_2 \in D \\ d_1 \le d_2 + c}} (\neg b_{j,d_2} \lor b_{i, d_1})$$
+  $$\forall d_1 \in D: \bigwedge_{\substack{d_2 \in D \\ d_2 + c \le d_1}} (\neg b_{j,d_2} \lor b_{i, d_1})$$
 
 ### Podmínka $v_i = v_j + c$
 $$\forall d_1 \in D: \bigwedge_{\substack{d_2 \in D \\ d_1 \le d_2 + c \\ d_2 + c \le d_1}} (\neg b_{j,d_2} \lor b_{i, d_1})$$
@@ -32,14 +32,14 @@ $$\forall d_1 \in D: \bigwedge_{\substack{d_2 \in D \\ d_1 \le d_2 + c \\ d_2 + 
 
 Pozn.: pokud neexistuje žádné $d_2$ splňující podmínku, pak je přidána prázdná klauzule, která značí spor.
 
-Pozn2.: výsledná formule by šla zkrátit pouze na omezování "sousedních" hodnot $d_1, d_2$, kde $d_2$ by byly nejmenší prvky z množiny $\{d|d_1 < d\}$.
+Pozn2.: výsledná formule by šla zkrátit pouze na omezování "sousedních" hodnot $d_1, d_2$, kde $d_2$ by byly nejmenší prvky z množiny $\lbrace d|d_1 < d \rbrace$.
 
 # Bonus
     In the previous example, try to describe an encoding with only a 𝑂(log2 |𝐷|) propositional variable for each variable 𝑣𝑖.
 
 Celá myšlenka je založena na indexování domény pomocí binární reprezentace indexu.
 
-Každé hodnotě z $D$ je přiřazen unikátní index (počínající od 0). Výsledná formule je potom vytvořena stejně jako v předchozím případě, akorát každá proměnná $b_{i,j}$ je nahrazena klauzulí s $\lceil \log_2 |D| \rceil$ proměnnými tak, že pro hodnotu $j$ je vybrán odpovídající binární zápis $B$, který lze reprezentovat jako $b_{\lceil \log_2 |D|\rceil }, b_{\lceil \log_2 |D| \rceil -1},...,b_1,b_0$, kde $b_i \in \{0,1\}$, a výsledná kombinace pro $b_{i,j}$ z předchozího řešení vypadá takto: 
+Každé hodnotě z $D$ je přiřazen unikátní index (počínající od 0). Výsledná formule je potom vytvořena stejně jako v předchozím případě, akorát každá proměnná $b_{i,j}$ je nahrazena klauzulí s $\lceil \log_2 |D| \rceil$ proměnnými tak, že pro hodnotu $j$ je vybrán odpovídající binární zápis $B$, který lze reprezentovat jako $b_{\lceil \log_2 |D|\rceil }, b_{\lceil \log_2 |D| \rceil -1},...,b_1,b_0$, kde $b_i \in \lbrace 0,1\rbrace$, a výsledná kombinace pro $b_{i,j}$ z předchozího řešení vypadá takto: 
 $$
 \bigwedge_{k \in 0..\lceil \log_2 |D|) \rceil} \text{bin\_repr}(i,j,k)
 $$
