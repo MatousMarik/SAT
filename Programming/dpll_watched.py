@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Watched DPLL Algorithm. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_dpll.php"""
+from dataclasses import dataclass
 from formula2cnf import formula2cnf, read_input, write_output
 from argparse import ArgumentParser, Namespace
 from time import perf_counter_ns
-from typing import Optional
-from dataclasses import dataclass
+from typing import List, Optional
+from itertools import chain
 import sys, os
 
 
@@ -87,45 +88,47 @@ def get_cnf(args: Namespace) -> tuple[list[list[int]], int]:
 
 
 @dataclass
-class Literal:
-    lit: int
-    satisfied: bool = None
-    adjacent: set = set()
-
-    def __hash__(self) -> int:
-        return self.lit
-
-
-@dataclass
-class ClauseLiteral:
-    lit: Literal
-    next: "ClauseLiteral"
-    clause: "WatchedClause"
-
-    def __post_init__(self):
-        self.lit.adjacent.add(self)
-
-
-@dataclass
 class WatchedClause:
-    w1: ClauseLiteral = None
-    w2: ClauseLiteral = None
+    """Clause with watchers (list[2 ints])."""
+
+    list: list[int]
+    watchers: List = None
 
     def __post_init__(self):
-        first = ClauseLiteral(self.clause[0], None, self)
-        prev = first
-        for lit in self.clause[1:]:
-            prev = ClauseLiteral(lit, prev, self)
-        first.next = prev
-        self.clause = first
-        self.w1 = first
-        self.w2 = prev
+        if len(self.list) > 1:
+            self.watchers = [0, 1]
+        else:
+            self.watchers = [0, 0]
 
-    def move(self, from_lit: ClauseLiteral) -> tuple[bool, bool]:
-        """Move watcher and return is_empty_clause and is_unit_clause."""
-        if self.w1 is from_lit:
-            while self.w1.lit.satisfied is False:
-                self.w1 = self.w1.next
+    def watch(
+        self, assignment: list[bool], literal: int
+    ) -> tuple[bool, int, Optional[int]]:
+        """
+        Move watcher and return if satisfiable, new watched literal and optionally unit_literal.
+
+        Note that literal will be negation of one's watcher literal.
+        """
+        l, w1, w2 = self.list, *self.watchers
+        # swap so it works only with w1
+        if l[w2] == -literal:
+            w2, w1 = w1, w2
+
+        # the other watcher is False - unsatisfiable
+        if assignment[l[w2]] == False:
+            return False, -l[w1], None
+
+        # search for another watchable
+        for w in chain(range(w1 + 1, len(l)), range(0, w1 + 1)):
+            # it can't be same as w2 and it has to be satisfiable
+            if w != w2 and assignment[l[w]] != False:
+                break
+        # not found - w2 watches unit_literal
+        if w == w1:
+            return True, -l[w1], l[w2]
+
+        # update watchers
+        self.watchers[:] = w, w2
+        return True, -l[w], None
 
 
 class DPLL_watched_solver:
@@ -133,29 +136,44 @@ class DPLL_watched_solver:
         start = perf_counter_ns()
         self.cnf = cnf
         self.max_var = max_var
-        literals: tuple[Literal] = tuple(
-            Literal(l) for l in range(-max_var, max_var + 1)
+        # empty watcher list (for each literal -> [clauses])
+        self.a_lists: list[list[WatchedClause]] = list(
+            [] for _ in range(max_var * 2 + 1)
         )
-        self.assigned: list[Literal] = []
-        self.unassigned: set[Literal] = set(literals)
 
-        self.watched_clauses = [
-            WatchedClause([literals[i] for i in clause]) for clause in cnf
-        ]
+        # satisfied literals
+        self.assigned: list[int] = []
+        # [None] + [values of each literal]
+        self.assignment: list[Optional[bool]] = [None] * (max_var * 2 + 1)
+        # unassigned variables
+        self.unassigned: set[int] = set(range(1, max_var + 1))
 
-        self.literals = literals
+        self.initial_unit_literals = None
+        self.generate_watched_lists()
 
         self.decisions: int = 0
         self.unit_prop_steps: int = 0
         self.solve_time: int = -1
         self.initialization_time: int = perf_counter_ns() - start
 
+    def generate_watched_lists(self) -> None:
+        """Create watched lists - list to clause with watched literal and list of literals from unit clauses."""
+        a_lists = self.a_lists
+        unit_literals = []
+        for clause in self.cnf:
+            ac = WatchedClause(clause)
+            a_lists[-clause[0]].append(ac)
+            if len(clause) == 1:
+                unit_literals.append(clause[0])
+            else:
+                a_lists[-clause[1]].append(ac)
+        self.initial_unit_literals = unit_literals
+
     def rollback(self, literal: Optional[int]) -> None:
         """Unassign all last assigned literals upto 'literal'."""
-        counters, a_lists, assigned, unassigned = (
-            self.counters,
-            self.a_lists,
+        assigned, assignment, unassigned = (
             self.assigned,
+            self.assignment,
             self.unassigned,
         )
         if literal is None:
@@ -163,83 +181,100 @@ class DPLL_watched_solver:
 
         while True:
             lit = assigned.pop()
-            for ci in a_lists[lit]:
-                counters[ci] += 1
             unassigned.add(abs(lit))
+
+            # update assignment
+            assignment[lit], assignment[-lit] = None, None
 
             if lit == literal:
                 break
 
     def unit_prop(self, literal: Optional[int] = None):
         """Set literal satisfied and do unit_propagation."""
-        counters, a_lists, cnf, assigned, unassigned = (
-            self.counters,
+        a_lists, assigned, assignment, unassigned = (
             self.a_lists,
-            self.cnf,
             self.assigned,
+            self.assignment,
             self.unassigned,
         )
         if literal is None:
-            u_literals = [
-                cnf[ci][0] for ci, count in enumerate(counters) if count == 1
-            ]
+            u_literals = self.initial_unit_literals
         else:
             self.decisions += 1
             u_literals = [literal]
+
         need_rollback = False
         while u_literals:
             lit = u_literals.pop()
             if abs(lit) not in unassigned:
                 continue
+
             self.unit_prop_steps += 1
-            for ci in a_lists[lit]:
-                if counters[ci] <= 2:
-                    if counters[ci] == 1:
-                        for ci2 in a_lists[lit]:
-                            if ci == ci2:
-                                break
-                            counters[ci2] += 1
-                        if need_rollback:
-                            self.rollback(literal)
-                        return False
-                    else:
-                        for l in cnf[ci]:
-                            if abs(l) in unassigned:
-                                u_literals.append(l)
-                                break
-                counters[ci] -= 1
+            # manage assignment of newly propagated literals
+            assignment[lit], assignment[-lit] = True, False
+            # 'pop_all' watched for literal
+            watched, a_lists[lit] = a_lists[lit], []
+            while watched:
+                watched_c = watched.pop()
+                # find if satisfiable, new_watched, unit_literal
+                sat, new_wl, new_ul = watched_c.watch(assignment, lit)
+                a_lists[new_wl].append(watched_c)
+
+                if not sat:
+                    # need to not loose not processed watchers
+                    a_lists[lit].extend(watched)
+                    # reset assignment
+                    assignment[lit], assignment[-lit] = None, None
+                    if need_rollback:
+                        self.rollback(literal)
+                    return False
+                elif new_ul is not None and abs(new_ul) in unassigned:
+                    # append new unit_literal
+                    u_literals.append(new_ul)
+
             need_rollback = True
             assigned.append(lit)
             unassigned.remove(abs(lit))
         return True
 
     def solve(self) -> tuple[bool, list[int]]:
+        """Return whether clause is satisfiable and if it is return its satisfied literals."""
         unassigned, u_prop, rollback = (
             self.unassigned,
             self.unit_prop,
             self.rollback,
         )
         start = perf_counter_ns()
+        # assigned only by decision
         assigned = []
+
         if not u_prop():
+            # initial formula is unsatisfiable
             self.solve_time = perf_counter_ns() - start
             return False, None
 
         while unassigned:
+            # no heuristic, take first unassigned that "pops"
             for lit in unassigned:
                 break
+            # try lit
             if u_prop(lit):
                 assigned.append(lit)
+            # try -lit
             elif u_prop(-lit):
                 assigned.append(-lit)
             else:
+                # dead end, need to backtrack
                 while assigned:
                     lit = assigned.pop()
                     rollback(lit)
+                    # +lit was always tried first, so it can be changed
                     if lit > 0:
                         if u_prop(-lit):
+                            # change was successful
                             assigned.append(-lit)
                             break
+                # backtracked completely - unsatisfiable
                 if not assigned:
                     self.solve_time = perf_counter_ns() - start
                     return False, None
@@ -273,7 +308,7 @@ def get_string_output(
 if __name__ == "__main__":
     args = parse_args()
     cnf, max_var = get_cnf(args)
-    solver = DPLL_adjacency_solver(cnf, max_var)
+    solver = DPLL_watched_solver(cnf, max_var)
     sat, model = solver.solve()
 
     result = get_string_output(

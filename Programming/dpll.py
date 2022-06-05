@@ -88,6 +88,8 @@ def get_cnf(args: Namespace) -> tuple[list[list[int]], int]:
 
 @dataclass
 class AdjacencyClause:
+    """Clause with counter of possible satisfiable literals."""
+
     list: list[int]
     counter: int
 
@@ -97,11 +99,14 @@ class DPLL_adjacency_solver:
         start = perf_counter_ns()
         self.cnf = cnf
         self.max_var = max_var
+        # empty adjacency lists
         self.a_lists: tuple[list[AdjacencyClause]] = tuple(
             [] for _ in range(max_var * 2 + 1)
         )
 
+        # satisfied literals
         self.assigned: list[int] = []
+        # unassigned variables
         self.unassigned: set[int] = set(range(1, max_var + 1))
 
         self.initial_unit_literals = None
@@ -137,9 +142,11 @@ class DPLL_adjacency_solver:
 
         while True:
             lit = assigned.pop()
+            unassigned.add(abs(lit))
+
+            # update counters
             for ac in a_lists[lit]:
                 ac.counter += 1
-            unassigned.add(abs(lit))
 
             if lit == literal:
                 break
@@ -156,15 +163,20 @@ class DPLL_adjacency_solver:
         else:
             self.decisions += 1
             u_literals = [literal]
+
         need_rollback = False
         while u_literals:
             lit = u_literals.pop()
             if abs(lit) not in unassigned:
                 continue
+
             self.unit_prop_steps += 1
+            # manage adjacent clauses
             for adj_c in a_lists[lit]:
                 if adj_c.counter == 1:
+                    # unsatisfying unit clause
                     for adj_c2 in a_lists[lit]:
+                        # reset counters for this literal
                         if adj_c is adj_c2:
                             break
                         adj_c2.counter += 1
@@ -172,43 +184,57 @@ class DPLL_adjacency_solver:
                         self.rollback(literal)
                     return False
                 elif adj_c.counter == 2:
+                    # creating unit clause
                     for l in adj_c.list:
+                        # finding unit literal
                         if abs(l) in unassigned:
                             u_literals.append(l)
                             break
                 adj_c.counter -= 1
+
             need_rollback = True
             assigned.append(lit)
             unassigned.remove(abs(lit))
         return True
 
     def solve(self) -> tuple[bool, list[int]]:
+        """Return whether clause is satisfiable and if it is return its satisfied literals."""
         unassigned, u_prop, rollback = (
             self.unassigned,
             self.unit_prop,
             self.rollback,
         )
         start = perf_counter_ns()
+        # assigned only by decision
         assigned = []
+
         if not u_prop():
+            # initial formula is unsatisfiable
             self.solve_time = perf_counter_ns() - start
             return False, None
 
         while unassigned:
+            # no heuristic, take first unassigned that "pops"
             for lit in unassigned:
                 break
+            # try lit
             if u_prop(lit):
                 assigned.append(lit)
+            # try -lit
             elif u_prop(-lit):
                 assigned.append(-lit)
             else:
+                # dead end, need to backtrack
                 while assigned:
                     lit = assigned.pop()
                     rollback(lit)
+                    # +lit was always tried first, so it can be changed
                     if lit > 0:
                         if u_prop(-lit):
+                            # change was successful
                             assigned.append(-lit)
                             break
+                # backtracked completely - unsatisfiable
                 if not assigned:
                     self.solve_time = perf_counter_ns() - start
                     return False, None
