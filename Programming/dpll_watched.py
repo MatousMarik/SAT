@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Watched DPLL Algorithm. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_dpll.php"""
+"""Watched DPLL Algorithm. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_watched.php"""
 from dataclasses import dataclass
 from formula2cnf import formula2cnf, read_input, write_output
 from argparse import ArgumentParser, Namespace
@@ -137,7 +137,7 @@ class DPLL_watched_solver:
         self.cnf = cnf
         self.max_var = max_var
         # empty watcher list (for each literal -> [clauses])
-        self.a_lists: list[list[WatchedClause]] = list(
+        self.w_lists: list[list[WatchedClause]] = list(
             [] for _ in range(max_var * 2 + 1)
         )
 
@@ -158,15 +158,15 @@ class DPLL_watched_solver:
 
     def generate_watched_lists(self) -> None:
         """Create watched lists - list to clause with watched literal and list of literals from unit clauses."""
-        a_lists = self.a_lists
+        w_lists = self.w_lists
         unit_literals = []
         for clause in self.cnf:
             ac = WatchedClause(clause)
-            a_lists[-clause[0]].append(ac)
+            w_lists[-clause[0]].append(ac)
             if len(clause) == 1:
                 unit_literals.append(clause[0])
             else:
-                a_lists[-clause[1]].append(ac)
+                w_lists[-clause[1]].append(ac)
         self.initial_unit_literals = unit_literals
 
     def rollback(self, literal: Optional[int]) -> None:
@@ -191,8 +191,8 @@ class DPLL_watched_solver:
 
     def unit_prop(self, literal: Optional[int] = None):
         """Set literal satisfied and do unit_propagation."""
-        a_lists, assigned, assignment, unassigned = (
-            self.a_lists,
+        w_lists, assigned, assignment, unassigned = (
+            self.w_lists,
             self.assigned,
             self.assignment,
             self.unassigned,
@@ -213,16 +213,16 @@ class DPLL_watched_solver:
             # manage assignment of newly propagated literals
             assignment[lit], assignment[-lit] = True, False
             # 'pop_all' watched for literal
-            watched, a_lists[lit] = a_lists[lit], []
+            watched, w_lists[lit] = w_lists[lit], []
             while watched:
                 watched_c = watched.pop()
                 # find if satisfiable, new_watched, unit_literal
                 sat, new_wl, new_ul = watched_c.watch(assignment, lit)
-                a_lists[new_wl].append(watched_c)
+                w_lists[new_wl].append(watched_c)
 
                 if not sat:
                     # need to not loose not processed watchers
-                    a_lists[lit].extend(watched)
+                    w_lists[lit].extend(watched)
                     # reset assignment
                     assignment[lit], assignment[-lit] = None, None
                     if need_rollback:
@@ -245,6 +245,7 @@ class DPLL_watched_solver:
             self.rollback,
         )
         start = perf_counter_ns()
+
         # assigned only by decision
         assigned = []
 
