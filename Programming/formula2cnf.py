@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Formula to cnf as Tseitin encoding. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_tseitin.php"""
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 import sys, os
 
 from collections import deque
@@ -51,14 +51,15 @@ def translate(string: str) -> tuple[list[int], dict[str, int]]:
             word = word[:-add_r]
 
         # translate strings to ints
-        if word in ETokens.map:
-            translated.append(ETokens.map[word])
-        elif word in v_map:
-            translated.append(v_map[word])
-        else:
-            v_map[word] = var
-            translated.append(var)
-            var += 1
+        if word:
+            if word in ETokens.map:
+                translated.append(ETokens.map[word])
+            elif word in v_map:
+                translated.append(v_map[word])
+            else:
+                v_map[word] = var
+                translated.append(var)
+                var += 1
 
         # adds right parentheses tokens
         if add_r:
@@ -79,9 +80,9 @@ class EAwaitedType:
     L = 4
 
 
-def parse2cnf(
+def parse_cnf(
     stream: list[int], max_var: int, equivalences: bool
-) -> tuple[list[tuple[int]], int]:
+) -> tuple[list[list[int]], int]:
     """
     Return list of clauses and root gate index.
     ([(1,)], -1 in case of single variable formula)
@@ -150,21 +151,24 @@ def parse2cnf(
             if token == ETokens.AND:
                 left = stack.pop()
                 right = stack.pop()
+
                 if left == right:
-                    raise RuntimeError(
-                        "Clause would contain same literal twice."
-                    )
-                if left == -right:
-                    raise RuntimeError(
-                        "Clause would contain opposite literals."
-                    )
+                    # add c <=> (L==R)
+                    cnf.append([-next_gate_index, left])
+                    if equivalences:
+                        cnf.append([-left, next_gate_index])
 
-                # add C <=> (L and R)
-                cnf.append((-next_gate_index, left))
-                cnf.append((-next_gate_index, right))
+                else:
+                    # add C <=> (L and R)
+                    cnf.append([-next_gate_index, left])
+                    cnf.append([-next_gate_index, right])
 
-                if equivalences:
-                    cnf.append((-left, -right, next_gate_index))
+                    if equivalences:
+                        if left == -right:
+                            raise RuntimeError(
+                                "Clause would contain opposite literals."
+                            )
+                        cnf.append([-left, -right, next_gate_index])
 
                 stack.append(next_gate_index)
                 next_gate_index += 1
@@ -173,20 +177,21 @@ def parse2cnf(
                 left = stack.pop()
                 right = stack.pop()
                 if left == right:
-                    raise RuntimeError(
-                        "Clause would contain same literal twice."
-                    )
-                if left == -right:
-                    raise RuntimeError(
-                        "Clause would contain opposite literals."
-                    )
+                    # add c <=> (L==R)
+                    cnf.append([-next_gate_index, left])
+                    if equivalences:
+                        cnf.append([-left, next_gate_index])
+                else:
+                    if left == -right:
+                        raise RuntimeError(
+                            "Clause would contain opposite literals."
+                        )
+                    # add C <=> (L or R)
+                    cnf.append([-next_gate_index, left, right])
 
-                # add C <=> (L or R)
-                cnf.append((-next_gate_index, left, right))
-
-                if equivalences:
-                    cnf.append((-left, next_gate_index))
-                    cnf.append((-right, cnf))
+                    if equivalences:
+                        cnf.append([-left, next_gate_index])
+                        cnf.append([-right, cnf])
 
                 stack.append(next_gate_index)
                 next_gate_index += 1
@@ -197,6 +202,8 @@ def parse2cnf(
         # awaited left parenthesis
         elif state == EAT.L:
             if token == ETokens.L_PAR:
+                if not rec_s:
+                    raise RuntimeError("Invalid formula.")
                 state = rec_s.pop()
             else:
                 raise RuntimeError("Unexpected token.")
@@ -208,23 +215,24 @@ def parse2cnf(
         root = stack.pop()
         if root == 1:
             # formula was just a single variable
-            return [(1,)], -1
+            return [[1]], -1
         elif root > last_var:
+            cnf.append([root])
             return cnf, root
     raise RuntimeError("Invalid formula.")
 
 
 def to_str(
-    clauses: list[tuple[int]],
+    clauses: list[list[int]],
     root: int,
     var_map: dict[str, int],
 ) -> str:
     """
-    Return string representing Tseitin encoding.
+    Returns DIMACS encoding of cnf for given formula.
 
     Params
     ------
-    clauses: list of tuples of ints representing variables or gates in one clause
+    clauses: list of lists of ints representing variables or gates in one clause
     root: root gate (for specification in comment)
     var_map: mapping variable_name -> int (for specifications in comment)
     """
@@ -244,24 +252,27 @@ def to_str(
     if root - len(var_map) > 1:
         ret.append(f"c gates {len(var_map) + 1}..{root}")
     ret.append("c")
-    ret.append(f"p cnf {len(var_map)} {len(clauses)}")
+    ret.append(f"p cnf {root} {len(clauses)}")
 
     for c in clauses:
         ret.append(" ".join(map(str, c)) + " 0")
     return "\n".join(ret)
 
 
-def formula2cnf(formula: str, equivalences: bool) -> str:
+def formula2cnf(
+    formula: str, equivalences: bool
+) -> tuple[list[list[int]], int, dict[str, int]]:
     """
-    Returns Tseitin encoding of cnf for given formula.
-    equivalences specify implications [False] or equivalences [True] between gates and corresponding clauses.
+    Return cnf (represented by list of tuples of clause literals), root and (variable_name -> literal) mapping.
+
+    Equivalences specify implications [False] or equivalences [True] between gates and corresponding clauses.
     """
     seq, v_map = translate(formula)
-    cnf, root = parse2cnf(seq, len(v_map), equivalences)
-    return to_str(cnf, root, v_map)
+    cnf, root = parse_cnf(seq, len(v_map), equivalences)
+    return cnf, root, v_map
 
 
-if __name__ == "__main__":
+def parse_args(args=sys.argv[1:]) -> Namespace:
     parser = ArgumentParser()
     parser.add_argument("input", nargs="?", type=str, help="Input file.")
     parser.add_argument("output", nargs="?", type=str, help="Output file.")
@@ -271,20 +282,36 @@ if __name__ == "__main__":
         action="store_true",
         help="CNF with equivalences. Otherwise left-to-right implications only.",
     )
-    args = parser.parse_args(["test.sat"])
+    return parser.parse_args(args)
 
-    if args.input is None:
+
+def read_input(input_loc: str) -> str:
+    """Read input string from given location."""
+    if input_loc is None:
         string = sys.stdin.read()
     else:
-        if not os.path.exists(args.input):
-            args.input = os.path.join(os.path.dirname(__file__), args.input)
-        with open(args.input, "r") as f:
+        if not os.path.exists(input_loc):
+            input_loc = os.path.join(os.path.dirname(__file__), input_loc)
+        with open(input_loc, "r") as f:
             string = f.read()
+    return string
 
-    result = formula2cnf(string, args.equivalences)
 
-    if args.output is None:
-        print(result)
+def write_output(string: str, output_loc: str) -> str:
+    if output_loc is None:
+        print(string)
     else:
-        with open(args.output, "w") as f:
-            f.write(result)
+        with open(output_loc, "w") as f:
+            f.write(string)
+
+
+if __name__ == "__main__":
+    args = parse_args()
+
+    tseitin = read_input(args.input)
+
+    cnf, root, v_map = formula2cnf(tseitin, args.equivalences)
+
+    result = to_str(cnf, root, v_map)
+
+    write_output(result, args.output)
