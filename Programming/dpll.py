@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """DPLL Algorithm. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_dpll.php"""
+from dataclasses import dataclass
 from formula2cnf import formula2cnf, read_input, write_output
 from argparse import ArgumentParser, Namespace
 from time import perf_counter_ns
@@ -85,19 +86,25 @@ def get_cnf(args: Namespace) -> tuple[list[list[int]], int]:
     return cnf, max_var
 
 
+@dataclass
+class AdjacencyClause:
+    list: list[int]
+    counter: int
+
+
 class DPLL_adjacency_solver:
     def __init__(self, cnf: list[list[int]], max_var: int) -> None:
         start = perf_counter_ns()
         self.cnf = cnf
         self.max_var = max_var
-        self.a_lists: tuple[set[int]] = tuple(
-            set() for _ in range(max_var * 2 + 1)
+        self.a_lists: tuple[list[AdjacencyClause]] = tuple(
+            [] for _ in range(max_var * 2 + 1)
         )
-        self.counters: list[int] = []
 
         self.assigned: list[int] = []
         self.unassigned: set[int] = set(range(1, max_var + 1))
 
+        self.initial_unit_literals = None
         self.generate_adjacency_lists()
 
         self.decisions: int = 0
@@ -106,17 +113,21 @@ class DPLL_adjacency_solver:
         self.initialization_time: int = perf_counter_ns() - start
 
     def generate_adjacency_lists(self) -> None:
-        """Create adjacency lists, counters of possibly satisfied literals in clauses and time that it took to build them."""
-        counters, a_lists = self.counters, self.a_lists
-        for ci, clause in enumerate(self.cnf):
-            counters.append(len(clause))
+        """Create adjacency lists + counters of possibly satisfied literals in clauses and list of literals from unit clauses."""
+        a_lists = self.a_lists
+        unit_literals = []
+        for clause in self.cnf:
+            len_ = len(clause)
+            ac = AdjacencyClause(clause, len_)
+            if len_ == 1:
+                unit_literals.append(clause[0])
             for lit in clause:
-                a_lists[-lit].add(ci)
+                a_lists[-lit].append(ac)
+        self.initial_unit_literals = unit_literals
 
     def rollback(self, literal: Optional[int]) -> None:
         """Unassign all last assigned literals upto 'literal'."""
-        counters, a_lists, assigned, unassigned = (
-            self.counters,
+        a_lists, assigned, unassigned = (
             self.a_lists,
             self.assigned,
             self.unassigned,
@@ -126,8 +137,8 @@ class DPLL_adjacency_solver:
 
         while True:
             lit = assigned.pop()
-            for ci in a_lists[lit]:
-                counters[ci] += 1
+            for ac in a_lists[lit]:
+                ac.counter += 1
             unassigned.add(abs(lit))
 
             if lit == literal:
@@ -135,17 +146,13 @@ class DPLL_adjacency_solver:
 
     def unit_prop(self, literal: Optional[int] = None):
         """Set literal satisfied and do unit_propagation."""
-        counters, a_lists, cnf, assigned, unassigned = (
-            self.counters,
+        a_lists, assigned, unassigned = (
             self.a_lists,
-            self.cnf,
             self.assigned,
             self.unassigned,
         )
         if literal is None:
-            u_literals = [
-                cnf[ci][0] for ci, count in enumerate(counters) if count == 1
-            ]
+            u_literals = self.initial_unit_literals
         else:
             self.decisions += 1
             u_literals = [literal]
@@ -155,22 +162,21 @@ class DPLL_adjacency_solver:
             if abs(lit) not in unassigned:
                 continue
             self.unit_prop_steps += 1
-            for ci in a_lists[lit]:
-                if counters[ci] <= 2:
-                    if counters[ci] == 1:
-                        for ci2 in a_lists[lit]:
-                            if ci == ci2:
-                                break
-                            counters[ci2] += 1
-                        if need_rollback:
-                            self.rollback(literal)
-                        return False
-                    else:
-                        for l in cnf[ci]:
-                            if abs(l) in unassigned:
-                                u_literals.append(l)
-                                break
-                counters[ci] -= 1
+            for adj_c in a_lists[lit]:
+                if adj_c.counter == 1:
+                    for adj_c2 in a_lists[lit]:
+                        if adj_c is adj_c2:
+                            break
+                        adj_c2.counter += 1
+                    if need_rollback:
+                        self.rollback(literal)
+                    return False
+                elif adj_c.counter == 2:
+                    for l in adj_c.list:
+                        if abs(l) in unassigned:
+                            u_literals.append(l)
+                            break
+                adj_c.counter -= 1
             need_rollback = True
             assigned.append(lit)
             unassigned.remove(abs(lit))
