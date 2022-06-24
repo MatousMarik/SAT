@@ -33,22 +33,24 @@ def translate(string: str) -> tuple[list[int], dict[str, int]]:
     v_map = {}
     var = 1
 
+    # add spaces after brackets
+    string = ") ".join(string.split(")"))
+
     translated = []
     # cycle list of words (parts of string separated by whitespaces)
     for word in str.split(string):
         # trims left parenthesis and adds it as a token
         if word[0] == "(":
-            translated.append(ETokens.map["("])
+            translated.append(ETokens.L_PAR)
+            if len(word) == 1:
+                continue
             word = word[1:]
 
         # trims right parentheses
-        add_r = 0
-        while word[-1 - add_r] == ")":
-            add_r += 1
-            if add_r == len(word):
-                break
-        if add_r:
-            word = word[:-add_r]
+        add_r = False
+        if len(word) > 1 and word[-1] == ")":
+            add_r = True
+            word = word[:-1]
 
         # translate strings to ints
         if word:
@@ -63,7 +65,7 @@ def translate(string: str) -> tuple[list[int], dict[str, int]]:
 
         # adds right parentheses tokens
         if add_r:
-            translated.extend([ETokens.map[")"]] * add_r)
+            translated.append(ETokens.R_PAR)
 
     return translated, v_map
 
