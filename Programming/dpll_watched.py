@@ -108,27 +108,27 @@ class WatchedClause:
 
         Note that literal will be negation of one's watcher literal.
         """
-        l, w1, w2 = self.list, *self.watchers
+        w1, w2 = self.watchers
         # swap so it works only with w1
-        if l[w2] == -literal:
+        if self.list[w2] == -literal:
             w2, w1 = w1, w2
 
         # the other watcher is False - unsatisfiable
-        if assignment[l[w2]] == False:
-            return False, -l[w1], None
+        if assignment[self.list[w2]] == False:
+            return False, -self.list[w1], None
 
         # search for another watchable
-        for w in chain(range(w1 + 1, len(l)), range(0, w1 + 1)):
+        for w in chain(range(w1 + 1, len(self.list)), range(0, w1 + 1)):
             # it can't be same as w2 and it has to be satisfiable
-            if w != w2 and assignment[l[w]] != False:
+            if w != w2 and assignment[self.list[w]] != False:
                 break
         # not found - w2 watches unit_literal
         if w == w1:
-            return True, -l[w1], l[w2]
+            return True, -self.list[w1], self.list[w2]
 
         # update watchers
         self.watchers[:] = w, w2
-        return True, -l[w], None
+        return True, -self.list[w], None
 
 
 class DPLL_watched_solver:
@@ -158,45 +158,33 @@ class DPLL_watched_solver:
 
     def generate_watched_lists(self) -> None:
         """Create watched lists - list to clause with watched literal and list of literals from unit clauses."""
-        w_lists = self.w_lists
         unit_literals = []
         for clause in self.cnf:
             ac = WatchedClause(clause)
-            w_lists[-clause[0]].append(ac)
+            self.w_lists[-clause[0]].append(ac)
             if len(clause) == 1:
                 unit_literals.append(clause[0])
             else:
-                w_lists[-clause[1]].append(ac)
+                self.w_lists[-clause[1]].append(ac)
         self.initial_unit_literals = unit_literals
 
     def rollback(self, literal: Optional[int]) -> None:
         """Unassign all last assigned literals upto 'literal'."""
-        assigned, assignment, unassigned = (
-            self.assigned,
-            self.assignment,
-            self.unassigned,
-        )
         if literal is None:
-            literal = assigned[0]
+            literal = self.assigned[0]
 
         while True:
-            lit = assigned.pop()
-            unassigned.add(abs(lit))
+            lit = self.assigned.pop()
+            self.unassigned.add(abs(lit))
 
             # update assignment
-            assignment[lit], assignment[-lit] = None, None
+            self.assignment[lit], self.assignment[-lit] = None, None
 
             if lit == literal:
                 break
 
     def unit_prop(self, literal: Optional[int] = None):
         """Set literal satisfied and do unit_propagation."""
-        w_lists, assigned, assignment, unassigned = (
-            self.w_lists,
-            self.assigned,
-            self.assignment,
-            self.unassigned,
-        )
         if literal is None:
             u_literals = self.initial_unit_literals
         else:
@@ -206,72 +194,67 @@ class DPLL_watched_solver:
         need_rollback = False
         while u_literals:
             lit = u_literals.pop()
-            if abs(lit) not in unassigned:
+            if abs(lit) not in self.unassigned:
                 continue
 
             self.unit_prop_steps += 1
             # manage assignment of newly propagated literals
-            assignment[lit], assignment[-lit] = True, False
+            self.assignment[lit], self.assignment[-lit] = True, False
             # 'pop_all' watched for literal
-            watched, w_lists[lit] = w_lists[lit], []
+            watched, self.w_lists[lit] = self.w_lists[lit], []
             while watched:
                 watched_c = watched.pop()
                 # find if satisfiable, new_watched, unit_literal
-                sat, new_wl, new_ul = watched_c.watch(assignment, lit)
-                w_lists[new_wl].append(watched_c)
+                sat, new_wl, new_ul = watched_c.watch(self.assignment, lit)
+                self.w_lists[new_wl].append(watched_c)
 
                 if not sat:
                     # need to not loose not processed watchers
-                    w_lists[lit].extend(watched)
+                    self.w_lists[lit].extend(watched)
                     # reset assignment
-                    assignment[lit], assignment[-lit] = None, None
+                    self.assignment[lit], self.assignment[-lit] = None, None
                     if need_rollback:
                         self.rollback(literal)
                     return False
-                elif new_ul is not None and abs(new_ul) in unassigned:
+                elif new_ul is not None and abs(new_ul) in self.unassigned:
                     # append new unit_literal
                     u_literals.append(new_ul)
 
             need_rollback = True
-            assigned.append(lit)
-            unassigned.remove(abs(lit))
+            self.assigned.append(lit)
+            self.unassigned.remove(abs(lit))
         return True
 
     def solve(self) -> tuple[bool, list[int]]:
         """Return whether clause is satisfiable and if it is return its satisfied literals."""
-        unassigned, u_prop, rollback = (
-            self.unassigned,
-            self.unit_prop,
-            self.rollback,
-        )
         start = perf_counter_ns()
 
         # assigned only by decision
         assigned = []
 
-        if not u_prop():
+        if not self.unit_prop():
             # initial formula is unsatisfiable
             self.solve_time = perf_counter_ns() - start
             return False, None
 
-        while unassigned:
+        while self.unassigned:
             # no heuristic, take first unassigned that "pops"
-            for lit in unassigned:
+            for lit in self.unassigned:
                 break
             # try lit
-            if u_prop(lit):
+            if self.unit_prop(lit):
                 assigned.append(lit)
             # try -lit
-            elif u_prop(-lit):
+            elif self.unit_prop(-lit):
                 assigned.append(-lit)
             else:
                 # dead end, need to backtrack
                 while assigned:
                     lit = assigned.pop()
-                    rollback(lit)
+                    self.rollback(lit)
                     # +lit was always tried first, so it can be changed
                     if lit > 0:
-                        if u_prop(-lit):
+                        if self.unit_prop(-lit):
                             # change was successful
                             assigned.append(-lit)
                             break
