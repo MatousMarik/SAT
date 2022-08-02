@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from formula2cnf import formula2cnf, read_input, write_output
 from argparse import ArgumentParser, Namespace
 from time import perf_counter_ns
-from typing import List, Optional, Callable
+from typing import List, Optional, Callable, Tuple
 from itertools import chain
-from collections import Counter
+from collections import Counter, deque
 import sys, os
 import numpy as np
 
@@ -39,7 +39,7 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
         help="Output CPU time, number of decisions and number of unit propagation steps.",
     )
     parser.add_argument(
-        "--confilct_limit",
+        "--conflict_limit",
         type=int,
         default=128,
         help="Initial limit on conflicts before reset.",
@@ -58,7 +58,6 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
         help="List of literals (integers) that are assumed satisfied.",
     )
     parser.add_argument(
-        "-h",
         "--heuristic",
         type=str,
         choices=["default", "vsids", "random", "unsatisfied"],
@@ -140,6 +139,9 @@ class WatchedClause:
     def w2(self) -> int:
         return self.list[self.watchers[1]]
 
+    def watches_more(self) -> bool:
+        self.watchers[0] != self.watchers[1]
+
     def __hash__(self) -> int:
         return self.ci
 
@@ -192,7 +194,13 @@ class CDCL_watched_solver:
         self.max_var = max_var
         self.conflict_limit = conflict_limit
         self.lbd_limit = lbd_limit
-        self.assumption = list(assumption) if assumption is not None else None
+
+        self.assumption = None
+        if assumption:
+            # for popping
+            assumption.reverse()
+            self.assumption = assumption
+
         assert self.assumption is None or all(
             -max_var <= a <= max_var for a in self.assumption
         )
@@ -216,7 +224,7 @@ class CDCL_watched_solver:
             set() for _ in range(max_var * 2 + 1)
         ]
         self.variables: set[int] = set()
-        self.initial_unit_literals: list[int] = []
+        self.decided_literals: deque[int] = deque()
         self.lit_to_clause_indices: list[set[int]] = [
             set() for _ in range(max_var * 2 + 1)
         ]
@@ -230,7 +238,7 @@ class CDCL_watched_solver:
             self.w_sets[-clause[0]].add(ac)
             if len(clause) == 1:
                 # add unit clause literals
-                self.unit_literals.append(clause[0])
+                self.decided_literals.append(clause[0])
             else:
                 self.w_sets[-clause[1]].add(ac)
 
@@ -273,26 +281,23 @@ class CDCL_watched_solver:
             self.assignment[lit], self.assignment[-lit] = None, None
 
     def unit_prop(
-        self, literal: Optional[int] = None, decision_level: int = 0
+        self, decision_level: int = 0
     ) -> tuple[bool, Optional[WatchedClause]]:
         """
         Set literal satisfied and do unit_propagation.
         Return SAT and conflict clause.
         """
-        if literal is None:
-            u_literals = self.initial_unit_literals
-        else:
-            self.decisions += 1
-            u_literals = [literal]
 
-        while u_literals:
-            lit = u_literals.pop()
+        while self.decided_literals:
+            lit = self.decided_literals.pop()
             if abs(lit) not in self.unassigned:
                 continue
 
             self.unit_prop_steps += 1
             # manage assignment of newly propagated literals
             self.assignment[lit], self.assignment[-lit] = True, False
+            self.assigned.append(lit)
+            self.unassigned.remove(abs(lit))
             # set decision level
             self.decision_levels[abs(lit)] = decision_level
             # 'pop_all' watched for literal
@@ -306,18 +311,13 @@ class CDCL_watched_solver:
                 if not sat:
                     # need to not loose not processed watchers
                     self.w_sets[lit].update(watched)
-                    # # reset assignment
-                    # assignment[lit], assignment[-lit] = None, None
-                    # if need_rollback:
-                    #     self.rollback(literal)
                     return False, watched_c
-                elif new_ul is not None and abs(new_ul) in self.unassigned:
+
+                if new_ul is not None and abs(new_ul) in self.unassigned:
                     # append new unit_literal
-                    u_literals.append(new_ul)
+                    self.decided_literals.append(new_ul)
                     self.antecedents[abs(new_ul)] = watched_c
 
-            self.assigned.append(lit)
-            self.unassigned.remove(abs(lit))
         return True, None
 
     def most_unsatisfied_literal(self) -> int:
@@ -354,29 +354,47 @@ class CDCL_watched_solver:
     def process_conflict(
         self, conflict: WatchedClause, decision_level: int
     ) -> tuple[int, int]:
-        """Learn assertive clause and returns second highest decision level in it and unit_literal."""
+        """Learn assertive clause set unit_literal as decided and returns second highest decision level in it."""
         if decision_level == 0:
             return -1
 
         # assertive clause literals
-        assignment = [*self.assignment]
+        assignment = [*self.assigned]
         acls = set(conflict.list)
-        # TODO: check
-        same_dl_acls_count = len(
-            [
-                lit
-                for lit in acls
-                if self.decision_levels[abs(lit)] == decision_level
-            ]
-        )
-        while same_dl_acls_count > 1:
-            lit = assignment.pop()
-            if self.decision_levels[abs(lit)] == decision_level:
-                same_dl_acls_count -= 1
-            if -lit in acls:
-                acls.update(self.antecedents[abs(lit)].literals)
-                acls.remove(lit)
-                acls.remove(-lit)
+        while (
+            len(
+                [
+                    lit
+                    for lit in acls
+                    if self.decision_levels[abs(lit)] == decision_level
+                ]
+            )
+            > 1
+        ):
+            while assignment:
+                lit = assignment.pop()
+                if -lit in acls:
+                    acls.update(self.antecedents[abs(lit)].list)
+                    acls.remove(lit)
+                    acls.remove(-lit)
+                break
+
+        # # TODO: check
+        # same_dl_acls_count = len(
+        #     [
+        #         lit
+        #         for lit in acls
+        #         if self.decision_levels[abs(lit)] == decision_level
+        #     ]
+        # )
+        # while same_dl_acls_count > 1:
+        #     lit = assignment.pop()
+        #     if self.decision_levels[abs(lit)] == decision_level:
+        #         same_dl_acls_count -= 1
+        #     if -lit in acls:
+        #         acls.update(self.antecedents[abs(lit)].literals)
+        #         acls.remove(lit)
+        #         acls.remove(-lit)
 
         level = 0
         watchers = [None, None]
@@ -403,7 +421,7 @@ class CDCL_watched_solver:
             watchers[1] = watchers[0]
         else:
             found = False
-            for lit in reversed(self.assignment):
+            for lit in reversed(self.assigned):
                 if self.decision_levels[abs(lit)] == level:
                     for li, c_lit in enumerate(lits):
                         if abs(lit) == abs(c_lit):
@@ -421,7 +439,10 @@ class CDCL_watched_solver:
 
         self.learned.append(new_clause)
 
-        return level, unit_literal
+        self.decided_literals.clear()
+        self.decided_literals.append(unit_literal)
+
+        return level
 
     def solve(self) -> tuple[bool, list[int]]:
         """Return whether clause is satisfiable and if it is return its satisfied literals."""
@@ -438,13 +459,14 @@ class CDCL_watched_solver:
 
             if self.assumption:
                 # literals by assumption
-                lit = self.assumption.pop()
+                self.decided_literals.appendleft(self.assumption.pop())
             else:
                 # literal selection by heuristic
-                lit = self.get_decision_literal()
+                self.decided_literals.appendleft(self.get_decision_literal())
             decision_level += 1
+            self.decisions += 1
 
-            _, conflict = self.unit_prop(lit, decision_level)
+            _, conflict = self.unit_prop(decision_level)
 
             while conflict:
                 conflicts += 1
@@ -461,22 +483,20 @@ class CDCL_watched_solver:
                     for clause in self.learned:
                         if clause.lbd > self.lbd_limit:
                             self.w_sets[clause.w1].remove(clause)
-                            if clause.watchers[0] != clause.watchers[1]:
+                            if clause.watches_more():
                                 self.w_sets[clause.w2].remove(clause)
                         else:
                             new_learned.append(clause)
                     self.learned = new_learned
                     break
 
-            decision_level, new_ulit = self.process_conflicts(
-                conflict, decision_level
-            )
+                decision_level = self.process_conflict(conflict, decision_level)
 
-            if decision_level < 0:
-                return False, None
+                if decision_level < 0:
+                    return False, None
 
-            self.rollback(decision_level)
-            _, conflict = self.unit_prop(new_ulit, decision_level)
+                self.rollback(decision_level)
+                _, conflict = self.unit_prop(decision_level)
 
         self.solve_time = perf_counter_ns() - start
         return True, sorted(self.assigned, key=lambda i: abs(i))
@@ -508,7 +528,7 @@ def get_string_output(
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    args = parse_args([r"uf20-91\uf20-01.cnf"])
     cnf, max_var = get_cnf(args)
     solver = CDCL_watched_solver(
         cnf,
