@@ -6,6 +6,46 @@ import sys, os
 from collections import deque
 
 
+def parse_cnf(string: str) -> tuple[list[list[int]], int]:
+    lines = string.splitlines()
+    lines.reverse()
+    line = ""
+    while not line.startswith("p cnf "):
+        if not lines:
+            raise RuntimeError("Invalid formula. No 'p' line.")
+        line = lines.pop()
+    s_line = line.split(maxsplit=3)
+    try:
+        max_var = int(s_line[2])
+        num_clauses = int(s_line[3])
+    except:
+        raise RuntimeError(f"Invalid nbvar or nbclauses in '{line}'.")
+
+    cnf = []
+    try:
+        for line in lines[-num_clauses:]:
+            literals = list(map(int, line.split()))
+            assert literals[-1] == 0 and all(
+                0 < abs(l) <= max_var for l in literals[:-1]
+            )
+            cnf.append([*literals[:-1]])
+    except:
+        raise RuntimeError(f"Invalid clause: {line}")
+    return cnf, max_var
+
+
+def get_cnf(args: Namespace) -> tuple[list[list[int]], int]:
+    """Return cnf as list of clauses (tuples of ints - literals) and maximal variable."""
+    string = read_input(args.input)
+    if args.format == "SAT":
+        cnf, max_var, _ = formula2cnf(string, False)
+    elif args.format == "CNF":
+        cnf, max_var = parse_cnf(string)
+    else:
+        raise RuntimeError("Invalid format.")
+    return cnf, max_var
+
+
 class ETokens:
     """
     List formula tokens and their int representation
@@ -82,7 +122,7 @@ class EAwaitedType:
     L = 4
 
 
-def parse_cnf(
+def stream_to_cnf(
     stream: list[int], max_var: int, equivalences: bool
 ) -> tuple[list[list[int]], int]:
     """
@@ -270,7 +310,7 @@ def formula2cnf(
     Equivalences specify implications [False] or equivalences [True] between gates and corresponding clauses.
     """
     seq, v_map = translate(formula)
-    cnf, root = parse_cnf(seq, len(v_map), equivalences)
+    cnf, root = stream_to_cnf(seq, len(v_map), equivalences)
     return cnf, root, v_map
 
 
