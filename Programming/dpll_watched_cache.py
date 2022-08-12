@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Watched DPLL Algorithm. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_watched.php"""
 from dataclasses import dataclass
-from formula2cnf import formula2cnf, read_input, write_output
+from formula2cnf import get_cnf, write_output
 from argparse import ArgumentParser, Namespace
 from time import perf_counter_ns
 from typing import List, Optional
 from itertools import chain
 import random
-import sys, os
+import sys
 
 
 def parse_args(args=sys.argv[1:]) -> Namespace:
@@ -48,88 +48,72 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
     return args
 
 
-def parse_cnf(string: str) -> tuple[list[list[int]], int]:
-    lines = string.splitlines()
-    lines.reverse()
-    line = ""
-    while not line.startswith("p cnf "):
-        if not lines:
-            raise RuntimeError("Invalid formula. No 'p' line.")
-        line = lines.pop()
-    s_line = line.split(maxsplit=3)
-    try:
-        max_var = int(s_line[2])
-        num_clauses = int(s_line[3])
-    except:
-        raise RuntimeError(f"Invalid nbvar or nbclauses in '{line}'.")
-
-    cnf = []
-    try:
-        for line in lines[-num_clauses:]:
-            literals = list(map(int, line.split()))
-            assert literals[-1] == 0 and all(
-                0 < abs(l) <= max_var for l in literals[:-1]
-            )
-            cnf.append([*literals[:-1]])
-    except:
-        raise RuntimeError(f"Invalid clause: {line}")
-    return cnf, max_var
-
-
-def get_cnf(args: Namespace) -> tuple[list[list[int]], int]:
-    """Return cnf as list of clauses (tuples of ints - literals) and maximal variable."""
-    string = read_input(args.input)
-    if args.format == "SAT":
-        cnf, max_var, _ = formula2cnf(string, False)
-    elif args.format == "CNF":
-        cnf, max_var = parse_cnf(string)
-    else:
-        raise RuntimeError("Invalid format.")
-    return cnf, max_var
-
-
 @dataclass
 class WatchedClause:
     """Clause with watchers (list[2 ints])."""
 
-    list: list[int]
-    watchers: List = None
+    ci: int  # clause index
+    list: list[int]  # list of clause literals
+    lbd: int = 0
+    watchers: List[int] = None  # two watcher indices into list
 
     def __post_init__(self):
-        if len(self.list) > 1:
-            self.watchers = [0, 1]
-        else:
-            self.watchers = [0, 0]
+        """
+        If watchers are not provided for initialization
+        set them to first indices.
+        """
+        if self.watchers is None:
+            if len(self.list) > 1:
+                self.watchers = [0, 1]
+            else:
+                self.watchers = [0, 0]
+
+    @property
+    def w1(self) -> int:
+        """Literal watched by first watcher."""
+        return self.list[self.watchers[0]]
+
+    @property
+    def w2(self) -> int:
+        """Literal watched by second watcher."""
+        return self.list[self.watchers[1]]
+
+    def watches_more(self) -> bool:
+        """Whether watchers watch different literals."""
+        self.watchers[0] != self.watchers[1]
+
+    def __hash__(self) -> int:
+        return self.ci
 
     def watch(
         self, assignment: list[bool], literal: int
     ) -> tuple[bool, int, Optional[int]]:
         """
-        Move watcher and return if satisfiable, new watched literal and optionally unit_literal.
-
-        Note that literal will be negation of one's watcher literal.
+        Return if satisfiable, new watched literal and optionally unit_literal.
         """
         w1, w2 = self.watchers
         # swap so it works only with w1
         if self.list[w2] == -literal:
             w2, w1 = w1, w2
 
-        # the other watcher is False - unsatisfiable
-        if assignment[self.list[w2]] == False:
-            return False, -self.list[w1], None
-
         # search for another watchable
         for w in chain(range(w1 + 1, len(self.list)), range(0, w1 + 1)):
             # it can't be same as w2 and it has to be satisfiable
             if w != w2 and assignment[self.list[w]] != False:
                 break
-        # not found - w2 watches unit_literal
+
+        # not found - only w2 can satisfy
         if w == w1:
-            return True, -self.list[w1], self.list[w2]
+            if assignment[self.list[w2]] == False:
+                # w2 not satisfied => unsat
+                return False, self.list[w1], None
+            else:
+                # w2 satisfiable => unit literal
+                return True, self.list[w1], self.list[w2]
 
         # update watchers
-        self.watchers[:] = w, w2
-        return True, -self.list[w], None
+        self.watchers[:] = w2, w
+        return True, self.list[w], None
 
 
 class DPLL_watched_solver:
@@ -212,7 +196,7 @@ class DPLL_watched_solver:
                 watched_c = watched.pop()
                 # find if satisfiable, new_watched, unit_literal
                 sat, new_wl, new_ul = watched_c.watch(self.assignment, lit)
-                self.w_lists[new_wl].append(watched_c)
+                self.w_lists[-new_wl].append(watched_c)
 
                 if not sat:
                     # need to not loose not processed watchers

@@ -17,7 +17,11 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
         default=["vsids", "count"],
         nargs="+",
         choices=["vsids", "count", "neg_count"],
-        help="Next backbone choice. Can use more - first highest priority.",
+        help="""Next backbone choice. Can use more - first highest priority.
+        vsids - decaying sum from initial solve,
+        count - number of clauses with literal
+        neg_count - lowest number of clauses with opposite literal
+        """,
     )
     parser.add_argument(
         "-i",
@@ -38,9 +42,18 @@ def get_backbones(
     """
     Return backbones, sat calls, time in s.
 
+    Get some model then try to add opposite literals
+    as unit clauses and solve that new cnf to see whether they are backbone.
+
+    Heuristics are:
+    vsids - decaying sum from initial solve,
+    count - number of clauses with literal
+    neg_count - lowest number of clauses with opposite literal
+
     ***
     Params:
     - heuristics - next literal to check selection heuristic
+        Note: vsids heuristic exploits solver features
     - max_var - optional max_variable
     - initial_backbone - whether to skip checking of literals
         appearing in unit clauses of given cnf
@@ -66,8 +79,12 @@ def get_backbones(
     )
     to_check_set = set(to_check)
 
-    # only to have lit_to_clause_indices without learned clauses
-    solver.delete_learned_clauses(del_all=True)
+    # solver.lit_to_clause_indices could be used but then no other solver could be used
+    counts = [0] * (max_var * 2 + 1)
+    for c in cnf:
+        for l in c:
+            counts[l] += 1
+
     # sort by each of heuristics -> first has highest priority
     for h in reversed(heuristic):
         if h == "vsids":
@@ -77,11 +94,10 @@ def get_backbones(
             )
             to_check.sort(key=lambda x: vsids[x])
         elif h == "count":
-            to_check.sort(key=lambda x: len(solver.lit_to_clause_indices[x]))
+            to_check.sort(key=lambda x: counts[x])
         elif h == "neg_count":
-            # sort by lowest appearance of opposite literal
             to_check.sort(
-                key=lambda x: len(solver.lit_to_clause_indices[-x]),
+                key=lambda x: counts[-x],
                 reverse=True,
             )
         else:
@@ -93,13 +109,17 @@ def get_backbones(
             continue
         to_check_set.remove(lit)
 
-        # add unit clause with checked literal
+        # add unit clause with checked literal and solve new cnf
         cnf.append([lit])
         solver = CDCL_watched_solver(cnf, max_var)
         sat, model = solver.solve()
         calls += 1
+
         if sat:
+            # remove added unit clause
             cnf.pop()
+            # mark all literals that are to be checked but already are in the new model
+            # as definitely not part of backbone
             to_check_set.difference_update(model)
         else:
             backbone.add(-lit)

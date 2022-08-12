@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Watched CDCL Algorithm with Heuristics. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_decision.php"""
 from dataclasses import dataclass
-from formula2cnf import formula2cnf, read_input, write_output
+from formula2cnf import get_cnf, write_output
 from argparse import ArgumentParser, Namespace
 from time import perf_counter_ns
 from typing import List, Optional, Callable, Tuple
@@ -75,56 +75,20 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
     return args
 
 
-def parse_cnf(string: str) -> tuple[list[list[int]], int]:
-    lines = string.splitlines()
-    lines.reverse()
-    line = ""
-    while not line.startswith("p cnf "):
-        if not lines:
-            raise RuntimeError("Invalid formula. No 'p' line.")
-        line = lines.pop()
-    s_line = line.split(maxsplit=3)
-    try:
-        max_var = int(s_line[2])
-        num_clauses = int(s_line[3])
-    except:
-        raise RuntimeError(f"Invalid nbvar or nbclauses in '{line}'.")
-
-    cnf = []
-    try:
-        for line in lines[-num_clauses:]:
-            literals = list(map(int, line.split()))
-            assert literals[-1] == 0 and all(
-                0 < abs(l) <= max_var for l in literals[:-1]
-            )
-            cnf.append([*literals[:-1]])
-    except:
-        raise RuntimeError(f"Invalid clause: {line}")
-    return cnf, max_var
-
-
-def get_cnf(args: Namespace) -> tuple[list[list[int]], int]:
-    """Return cnf as list of clauses (tuples of ints - literals) and maximal variable."""
-    string = read_input(args.input)
-    if args.format == "SAT":
-        cnf, max_var, _ = formula2cnf(string, False)
-    elif args.format == "CNF":
-        cnf, max_var = parse_cnf(string)
-    else:
-        raise RuntimeError("Invalid format.")
-    return cnf, max_var
-
-
 @dataclass
 class WatchedClause:
     """Clause with watchers (list[2 ints])."""
 
-    ci: int
-    list: list[int]
+    ci: int  # clause index
+    list: list[int]  # list of clause literals
     lbd: int = 0
-    watchers: List = None
+    watchers: List[int] = None  # two watcher indices into list
 
     def __post_init__(self):
+        """
+        If watchers are not provided for initialization
+        set them to first indices.
+        """
         if self.watchers is None:
             if len(self.list) > 1:
                 self.watchers = [0, 1]
@@ -133,13 +97,16 @@ class WatchedClause:
 
     @property
     def w1(self) -> int:
+        """Literal watched by first watcher."""
         return self.list[self.watchers[0]]
 
     @property
     def w2(self) -> int:
+        """Literal watched by second watcher."""
         return self.list[self.watchers[1]]
 
     def watches_more(self) -> bool:
+        """Whether watchers watch different literals."""
         self.watchers[0] != self.watchers[1]
 
     def __hash__(self) -> int:
@@ -150,8 +117,6 @@ class WatchedClause:
     ) -> tuple[bool, int, Optional[int]]:
         """
         Return if satisfiable, new watched literal and optionally unit_literal.
-
-        Note that literal will be negation of one's watcher literal.
         """
         w1, w2 = self.watchers
         # swap so it works only with w1
@@ -225,6 +190,8 @@ class CDCL_watched_solver:
         self.decision_levels = [-1] * (max_var + 1)
 
         # row for positive and row for negative counters
+        # Note: negative literals are also indexing by their abs_value,
+        # not from the end by their true=negative value
         self.counters = np.zeros((2, max_var + 1))
 
         # empty watcher list (for each literal -> [clauses])
@@ -245,9 +212,7 @@ class CDCL_watched_solver:
         # unassigned variables
         self.unassigned: set[int] = self.variables.copy()
 
-        self.initial_unit_literals: deque[
-            Tuple[int, WatchedClause]
-        ] = self.unit_literals.copy()
+        # backbone found by first unit prop
         self.initial_backbone = None
 
         # heuristic for literal selection
@@ -263,6 +228,11 @@ class CDCL_watched_solver:
     def add_clause(
         self, clause: list[int], lbd: int = 0, watchers: list[int] = None
     ) -> WatchedClause:
+        """
+        Return new clause, created with provided fields and return its representation as WatchedClause.
+        Also add newly created clause into watched list and to lit_to_clause list and if clause is unit,
+        add it to unit_literals.
+        """
         new_wc = WatchedClause(self.new_clause_index, clause, lbd, watchers)
         # add variables adn lit_to_clauses
         for l in clause:
@@ -280,6 +250,7 @@ class CDCL_watched_solver:
         return new_wc
 
     def _set_heuristic(self, h: str) -> Callable[..., int]:
+        """Set decision literal selection heuristic."""
         HEURISTICS = {
             "unsatisfied": self.most_unsatisfied_literal,
             "random": self.random_literal,
@@ -311,7 +282,6 @@ class CDCL_watched_solver:
 
     def unit_prop(self, decision_level: int = 0) -> Optional[WatchedClause]:
         """
-        Set literal satisfied and do unit_propagation.
         Return SAT and conflict clause.
         """
 
@@ -321,10 +291,6 @@ class CDCL_watched_solver:
                 continue
 
             self.unit_prop_steps += 1
-            # assert (
-            #     len([l for l in unit.list if self.assignment[l] == False])
-            #     == len(unit.list) - 1
-            # )
             self.antecedents[abs(lit)] = unit
 
             conflict = self.set_literal(lit, decision_level)
@@ -367,17 +333,18 @@ class CDCL_watched_solver:
 
     def process_conflict(
         self, conflict: WatchedClause, decision_level: int
-    ) -> tuple[int, int]:
+    ) -> int:
         """Learn assertive clause set unit_literal as decided and returns second highest decision level in it."""
         if decision_level == 0:
             return -1
 
         # assertive clause literals
         assignment = [*self.assigned]
+        # assertive clause literals
         acls = set(conflict.list)
 
-        # assert set(acls).intersection([-a for a in assignment]) == set(acls)
-
+        # find all assertive clause literals
+        # update acls with antecedents of literals with given decision_level
         while True:
             same_dl_acls_count = len(
                 [
@@ -389,9 +356,6 @@ class CDCL_watched_solver:
             if not assignment or same_dl_acls_count <= 1:
                 break
             while assignment and same_dl_acls_count > 1:
-                # assert set(acls).intersection([-a for a in assignment]) == set(
-                #     acls
-                # )
                 lit = assignment.pop()
                 if -lit in acls:
                     same_dl_acls_count -= 1
@@ -405,8 +369,11 @@ class CDCL_watched_solver:
         decision_levels_in_assertive_clause = [False] * (decision_level + 1)
         lits = list(acls)
 
+        # vsids decay
         self.counters *= self.VSIDS_DECAY
 
+        # finding level and the unit literal of the assertive clause
+        # and counting decision levels for lbd
         for li, lit in enumerate(lits):
             dl = self.decision_levels[abs(lit)]
             if dl == decision_level:
@@ -423,6 +390,8 @@ class CDCL_watched_solver:
                 self.counters[1, -lit] += 1
 
         lbd = sum(decision_levels_in_assertive_clause)
+
+        # find watchers[1] - last assigned literal
         if len(lits) == 1:
             watchers[1] = watchers[0]
         else:
@@ -448,7 +417,11 @@ class CDCL_watched_solver:
     def set_literal(
         self, lit: int, decision_lvl: int
     ) -> Optional[WatchedClause]:
-        """Return conflict clause or None."""
+        """
+        Set literal as satisfied in given decision level.
+
+        Return conflict clause or None.
+        """
         self.assignment[lit], self.assignment[-lit] = True, False
         self.assigned.append(lit)
         self.unassigned.remove(abs(lit))
@@ -470,21 +443,11 @@ class CDCL_watched_solver:
 
             if new_ul is not None:
                 # append new unit_literal
-                # assert (
-                #     len(
-                #         [
-                #             l
-                #             for l in watched_c.list
-                #             if self.assignment[l] == False
-                #         ]
-                #     )
-                #     == len(watched_c.list) - 1
-                # )
                 self.unit_literals.append((new_ul, watched_c))
-
         return None
 
     def delete_clause(self, clause: WatchedClause) -> None:
+        """Remove watched clause from the solver."""
         for l in clause.list:
             self.lit_to_clause_indices[l].remove(clause.ci)
         self.w_sets[-clause.w1].remove(clause)
@@ -492,6 +455,7 @@ class CDCL_watched_solver:
             self.w_sets[-clause.w2].remove(clause)
 
     def delete_learned_clauses(self, *, del_all: bool = False) -> None:
+        """Delete learned clauses with lbd > lbd_limit or all of them if del_all."""
         new_learned = []
         for clause in self.learned:
             if del_all or clause.lbd > self.lbd_limit:
@@ -501,20 +465,23 @@ class CDCL_watched_solver:
         self.learned = new_learned
 
     def restart(self, *, hard: bool = False) -> None:
+        """
+        Restart the solver.
+
+        hard for complete restart (without stat reset).
+        """
         if hard:
             self.conflict_limit = self.i_conflict_limit
             self.lbd_limit = self.i_lbd_limit
             self.rollback(-1)
+            self.delete_learned_clauses(del_all=True)
         else:
             self.restarts += 1
             self.conflict_limit *= CDCL_watched_solver.LIMIT_MUL
             self.lbd_limit *= CDCL_watched_solver.LIMIT_MUL
             self.rollback(0)
+            self.delete_learned_clauses()
         self.unit_literals.clear()
-        self.delete_learned_clauses()
-
-    def get_assignment(self) -> list[Optional[bool]]:
-        return self.assignment.copy()
 
     def solve(self) -> tuple[bool, list[int]]:
         """Return whether clause is satisfiable and if it is return its satisfied literals."""
@@ -525,11 +492,14 @@ class CDCL_watched_solver:
             # initial formula is unsatisfiable
             self.solve_time += perf_counter_ns() - start
             return False, None
+
+        # initial backbone found by initial unit propagation
         if self.initial_backbone is None:
             self.initial_backbone = set(self.assigned)
 
         conflicts = 0
         decision_level = 0
+
         while self.unassigned:
             decision_level += 1
             if self.assumption:
@@ -560,16 +530,6 @@ class CDCL_watched_solver:
                     return False, None
 
                 self.rollback(decision_level)
-                # assert all(
-                #     self.decision_levels[abs(a)] <= decision_level
-                #     for a in self.assigned
-                # )
-                # ase = set(map(abs, self.assigned))
-                # assert all(
-                #     self.antecedents[a] is None
-                #     for a in range(1, self.max_var)
-                #     if a not in ase
-                # )
                 conflict = self.unit_prop(decision_level)
 
         self.solve_time += perf_counter_ns() - start
@@ -602,9 +562,7 @@ def get_string_output(
 
 
 if __name__ == "__main__":
-    args = parse_args(
-        [r"uf200-860\uf200-01.cnf", "-v"]
-    )  # [r"uf150-645\uf150-01.cnf", "-v"]uf20-91\uf20-02.cnf
+    args = parse_args()
     cnf, max_var = get_cnf(args)
     solver = CDCL_watched_solver(
         cnf,
@@ -616,11 +574,6 @@ if __name__ == "__main__":
     )
     sat, model = solver.solve()
     s_model = set(model)
-    print(
-        "Fine"
-        if all(any(l in s_model for l in c) for c in cnf)
-        else "Not Fine!"
-    )
 
     result = get_string_output(
         sat, model, solver.get_stats() if args.verbose else None
