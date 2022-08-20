@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Backbones task, specification on http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_backbone.php"""
-from cdcl_heuristics import CDCL_watched_solver, get_cnf
+from formula2cnf import get_cnf
+from cdcl_heuristics import CDCL_watched_solver
 from cdcl_heuristics import parse_args as cdcl_parse_args
 from typing import Optional, Tuple
 import sys
@@ -130,7 +131,7 @@ def get_backbones(
 
 if __name__ == "__main__":
     args = parse_args()
-    cnf, max_var = get_cnf(cdcl_parse_args([args.input]))
+    cnf, max_var = get_cnf(args.input)
     bb, calls, time = get_backbones(
         cnf, args.heuristic, max_var, args.initial_backbone
     )

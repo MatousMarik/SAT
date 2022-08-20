@@ -2,7 +2,7 @@
 """Formula to cnf as Tseitin encoding. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_tseitin.php"""
 from argparse import ArgumentParser, Namespace
 import sys, os
-
+from typing import Optional, Union
 from collections import deque
 
 
@@ -34,12 +34,22 @@ def parse_cnf(string: str) -> tuple[list[list[int]], int]:
     return cnf, max_var
 
 
-def get_cnf(args: Namespace) -> tuple[list[list[int]], int]:
+def get_cnf(
+    input: Union[str, None], format: Optional[str] = None
+) -> tuple[list[list[int]], int]:
     """Return cnf as list of clauses (tuples of ints - literals) and maximal variable."""
-    string = read_input(args.input)
-    if args.format == "SAT":
+    if input is not None:
+        if input.endswith(".sat"):
+            format = "SAT"
+        elif input.endswith(".cnf"):
+            format = "CNF"
+    if format is None:
+        format = "SAT"
+
+    string = read_input(input)
+    if format == "SAT":
         cnf, max_var, _ = formula2cnf(string, False)
-    elif args.format == "CNF":
+    elif format == "CNF":
         cnf, max_var = parse_cnf(string)
     else:
         raise RuntimeError("Invalid format.")

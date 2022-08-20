@@ -65,13 +65,6 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
         help="Heuristic for selection of decision literal.",
     )
     args = parser.parse_args(args)
-    if args.input is not None:
-        if args.input.endswith(".sat"):
-            args.format = "SAT"
-        elif args.input.endswith(".cnf"):
-            args.format = "CNF"
-    if args.format is None:
-        args.format = "SAT"
     return args
 
 
@@ -563,7 +556,7 @@ def get_string_output(
 
 if __name__ == "__main__":
     args = parse_args()
-    cnf, max_var = get_cnf(args)
+    cnf, max_var = get_cnf(args.input, args.format)
     solver = CDCL_watched_solver(
         cnf,
         max_var,
