@@ -7,7 +7,7 @@ from time import perf_counter_ns
 from typing import List, Optional, Callable, Tuple
 from itertools import chain
 from collections import Counter, deque
-import sys, os
+import sys
 import numpy as np
 
 
@@ -158,9 +158,7 @@ class CDCL_watched_solver:
             )
 
         self.max_var = max_var
-        self.i_conflict_limit = conflict_limit
         self.conflict_limit = conflict_limit
-        self.i_lbd_limit = lbd_limit
         self.lbd_limit = lbd_limit
 
         self.assumption: list[int] = None
@@ -255,43 +253,7 @@ class CDCL_watched_solver:
         else:
             self.get_decision_literal = HEURISTICS["default"]
 
-    def rollback(self, decision_level: int) -> None:
-        """Unassign all last assigned literals down to decision level."""
-        if not self.assigned:
-            return
-        var = abs(self.assigned[-1])
-        while self.decision_levels[var] > decision_level:
-            self.assigned.pop()
-            self.decision_levels[var] = -1
-            self.unassigned.add(var)
-            self.antecedents[var] = None
-
-            # update assignment
-            self.assignment[var], self.assignment[-var] = None, None
-
-            if not self.assigned:
-                return
-            var = abs(self.assigned[-1])
-
-    def unit_prop(self, decision_level: int = 0) -> Optional[WatchedClause]:
-        """
-        Return SAT and conflict clause.
-        """
-
-        while self.unit_literals:
-            lit, unit = self.unit_literals.popleft()
-            if abs(lit) not in self.unassigned:
-                continue
-
-            self.unit_prop_steps += 1
-            self.antecedents[abs(lit)] = unit
-
-            conflict = self.set_literal(lit, decision_level)
-
-            if conflict is not None:
-                return conflict
-
-        return None
+    ### HEURISTICS
 
     def most_unsatisfied_literal(self) -> int:
         """Return unassigned literal from most unsatisfied clauses."""
@@ -323,6 +285,60 @@ class CDCL_watched_solver:
             return -unassigned_vars[max_count_index - len(unassigned_vars)]
 
         return unassigned_vars[max_count_index]
+
+    ### METHODS
+
+    def set_literal(
+        self, lit: int, decision_lvl: int
+    ) -> Optional[WatchedClause]:
+        """
+        Set literal as satisfied in given decision level.
+
+        Return conflict clause or None.
+        """
+        self.assignment[lit], self.assignment[-lit] = True, False
+        self.assigned.append(lit)
+        self.unassigned.remove(abs(lit))
+        # set decision level
+        self.decision_levels[abs(lit)] = decision_lvl
+
+        # 'pop_all' watched for literal
+        watched, self.w_sets[lit] = self.w_sets[lit], set()
+        while watched:
+            watched_c = watched.pop()
+            # find if satisfiable, new_watched, unit_literal
+            sat, new_wl, new_ul = watched_c.watch(self.assignment, lit)
+            self.w_sets[-new_wl].add(watched_c)
+
+            if not sat:
+                # need to not loose not processed watchers
+                self.w_sets[lit].update(watched)
+                return watched_c
+
+            if new_ul is not None:
+                # append new unit_literal
+                self.unit_literals.append((new_ul, watched_c))
+        return None
+
+    def unit_prop(self, decision_level: int = 0) -> Optional[WatchedClause]:
+        """
+        Return SAT and conflict clause.
+        """
+
+        while self.unit_literals:
+            lit, unit = self.unit_literals.popleft()
+            if abs(lit) not in self.unassigned:
+                continue
+
+            self.unit_prop_steps += 1
+            self.antecedents[abs(lit)] = unit
+
+            conflict = self.set_literal(lit, decision_level)
+
+            if conflict is not None:
+                return conflict
+
+        return None
 
     def process_conflict(
         self, conflict: WatchedClause, decision_level: int
@@ -407,37 +423,23 @@ class CDCL_watched_solver:
 
         return level
 
-    def set_literal(
-        self, lit: int, decision_lvl: int
-    ) -> Optional[WatchedClause]:
-        """
-        Set literal as satisfied in given decision level.
+    def rollback(self, decision_level: int) -> None:
+        """Unassign all last assigned literals down to decision level."""
+        if not self.assigned:
+            return
+        var = abs(self.assigned[-1])
+        while self.decision_levels[var] > decision_level:
+            self.assigned.pop()
+            self.decision_levels[var] = -1
+            self.unassigned.add(var)
+            self.antecedents[var] = None
 
-        Return conflict clause or None.
-        """
-        self.assignment[lit], self.assignment[-lit] = True, False
-        self.assigned.append(lit)
-        self.unassigned.remove(abs(lit))
-        # set decision level
-        self.decision_levels[abs(lit)] = decision_lvl
+            # update assignment
+            self.assignment[var], self.assignment[-var] = None, None
 
-        # 'pop_all' watched for literal
-        watched, self.w_sets[lit] = self.w_sets[lit], set()
-        while watched:
-            watched_c = watched.pop()
-            # find if satisfiable, new_watched, unit_literal
-            sat, new_wl, new_ul = watched_c.watch(self.assignment, lit)
-            self.w_sets[-new_wl].add(watched_c)
-
-            if not sat:
-                # need to not loose not processed watchers
-                self.w_sets[lit].update(watched)
-                return watched_c
-
-            if new_ul is not None:
-                # append new unit_literal
-                self.unit_literals.append((new_ul, watched_c))
-        return None
+            if not self.assigned:
+                return
+            var = abs(self.assigned[-1])
 
     def delete_clause(self, clause: WatchedClause) -> None:
         """Remove watched clause from the solver."""
@@ -457,25 +459,6 @@ class CDCL_watched_solver:
                 new_learned.append(clause)
         self.learned = new_learned
 
-    def restart(self, *, hard: bool = False) -> None:
-        """
-        Restart the solver.
-
-        hard for complete restart (without stat reset).
-        """
-        if hard:
-            self.conflict_limit = self.i_conflict_limit
-            self.lbd_limit = self.i_lbd_limit
-            self.rollback(-1)
-            self.delete_learned_clauses(del_all=True)
-        else:
-            self.restarts += 1
-            self.conflict_limit *= CDCL_watched_solver.LIMIT_MUL
-            self.lbd_limit *= CDCL_watched_solver.LIMIT_MUL
-            self.rollback(0)
-            self.delete_learned_clauses()
-        self.unit_literals.clear()
-
     def solve(self) -> tuple[bool, list[int]]:
         """Return whether clause is satisfiable and if it is return its satisfied literals."""
         start = perf_counter_ns()
@@ -487,8 +470,7 @@ class CDCL_watched_solver:
             return False, None
 
         # initial backbone found by initial unit propagation
-        if self.initial_backbone is None:
-            self.initial_backbone = set(self.assigned)
+        self.initial_backbone = set(self.assigned)
 
         conflicts = 0
         decision_level = 0
@@ -512,9 +494,15 @@ class CDCL_watched_solver:
                 conflicts += 1
 
                 if conflicts >= self.conflict_limit:
+                    # restart
                     conflicts = 0
                     decision_level = 0
-                    self.restart()
+                    self.restarts += 1
+                    self.conflict_limit *= CDCL_watched_solver.LIMIT_MUL
+                    self.lbd_limit *= CDCL_watched_solver.LIMIT_MUL
+                    self.rollback(0)
+                    self.delete_learned_clauses()
+                    self.unit_literals.clear()
                     break
 
                 decision_level = self.process_conflict(conflict, decision_level)

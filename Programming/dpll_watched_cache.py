@@ -147,21 +147,6 @@ class DPLL_watched_solver:
                 self.w_lists[-clause[1]].append(ac)
         self.initial_unit_literals = unit_literals
 
-    def rollback(self, literal: Optional[int]) -> None:
-        """Unassign all last assigned literals upto 'literal'."""
-        if literal is None:
-            literal, _ = self.assigned[0]
-
-        while True:
-            lit, _ = self.assigned.pop()
-            self.unassigned.add(abs(lit))
-
-            # update assignment
-            self.assignment[lit], self.assignment[-lit] = None, None
-
-            if lit == literal:
-                break
-
     def unit_prop(self, literal: Optional[int] = None):
         """Set literal satisfied and do unit_propagation."""
         if literal is None:
@@ -207,6 +192,21 @@ class DPLL_watched_solver:
             self.assigned.append((lit, False))
             self.unassigned.remove(abs(lit))
         return True
+
+    def rollback(self, literal: Optional[int]) -> None:
+        """Unassign all last assigned literals upto 'literal'."""
+        if literal is None:
+            literal, _ = self.assigned[0]
+
+        while True:
+            lit, _ = self.assigned.pop()
+            self.unassigned.add(abs(lit))
+
+            # update assignment
+            self.assignment[lit], self.assignment[-lit] = None, None
+
+            if lit == literal:
+                break
 
     def solve(self) -> tuple[bool, list[int]]:
         """Return whether clause is satisfiable and if it is return its satisfied literals."""

@@ -7,6 +7,10 @@ from collections import deque
 
 
 def parse_cnf(string: str) -> tuple[list[list[int]], int]:
+    """
+    Parse Dimacs format to cnf as 2D list of ints.
+    Also return maximal variable.
+    """
     lines = string.splitlines()
     lines.reverse()
     line = ""
@@ -38,6 +42,7 @@ def get_cnf(
     input: Union[str, None], format: Optional[str] = None
 ) -> tuple[list[list[int]], int]:
     """Return cnf as list of clauses (tuples of ints - literals) and maximal variable."""
+    # overwrite by defaults if needed
     if input is not None:
         if input.endswith(".sat"):
             format = "SAT"
@@ -46,6 +51,7 @@ def get_cnf(
     if format is None:
         format = "SAT"
 
+    # parse
     string = read_input(input)
     if format == "SAT":
         cnf, max_var, _ = formula2cnf(string, False)
@@ -324,19 +330,6 @@ def formula2cnf(
     return cnf, root, v_map
 
 
-def parse_args(args=sys.argv[1:]) -> Namespace:
-    parser = ArgumentParser()
-    parser.add_argument("input", nargs="?", type=str, help="Input file.")
-    parser.add_argument("output", nargs="?", type=str, help="Output file.")
-    parser.add_argument(
-        "-e",
-        "--equivalences",
-        action="store_true",
-        help="CNF with equivalences. Otherwise left-to-right implications only.",
-    )
-    return parser.parse_args(args)
-
-
 def read_input(input_loc: str) -> str:
     """Read input string from given location."""
     if input_loc is None:
@@ -355,6 +348,19 @@ def write_output(string: str, output_loc: str) -> str:
     else:
         with open(output_loc, "w") as f:
             f.write(string)
+
+
+def parse_args(args=sys.argv[1:]) -> Namespace:
+    parser = ArgumentParser()
+    parser.add_argument("input", nargs="?", type=str, help="Input file.")
+    parser.add_argument("output", nargs="?", type=str, help="Output file.")
+    parser.add_argument(
+        "-e",
+        "--equivalences",
+        action="store_true",
+        help="CNF with equivalences. Otherwise left-to-right implications only.",
+    )
+    return parser.parse_args(args)
 
 
 if __name__ == "__main__":
