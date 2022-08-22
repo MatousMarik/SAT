@@ -27,7 +27,7 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
         "-i",
         "--initial_backbone",
         action="store_false",
-        help="Don't initial unit prop as backbone.",
+        help="Don't use initial unit prop as backbone.",
     )
     args = parser.parse_args(args)
     return args

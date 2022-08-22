@@ -71,9 +71,9 @@ def try_solvers():
     from time import perf_counter_ns
     from pysat.solvers import Glucose4, Lingeling
 
-    i = 300
-    cdcl = False
-    glucose = False
+    i = 20
+    cdcl = True
+    glucose = True
     ling = True
 
     while any((cdcl, glucose, ling)):
