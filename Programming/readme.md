@@ -38,7 +38,11 @@ See [report](./report.md).
 
 ### [N Queens Puzzle](http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_n_queens.php)
 
+See [report](./using_solver_report.md#n-queens-puzzle)
+
 ### [Backbones](http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_backbone.php)
+
+See [report](./using_solver_report.md#backbones)
 
 
 
