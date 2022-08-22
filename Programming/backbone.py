@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Backbones task, specification on http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_backbone.php"""
 from formula2cnf import get_cnf
-from cdcl_heuristics import CDCL_watched_solver
+from cdcl import CDCL_watched_solver
 from typing import Optional, Tuple
 import sys
 from argparse import ArgumentParser, Namespace

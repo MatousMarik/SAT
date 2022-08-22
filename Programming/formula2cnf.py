@@ -77,7 +77,7 @@ class ETokens:
     map = {"(": L_PAR, ")": R_PAR, "and": AND, "or": OR, "not": NOT}
 
 
-def translate(string: str) -> tuple[list[int], dict[str, int]]:
+def _translate(string: str) -> tuple[list[int], dict[str, int]]:
     """
     Splits sequence by whitespaces and parentheses.
     Return translated sequence and mapping.
@@ -138,7 +138,7 @@ class EAwaitedType:
     L = 4
 
 
-def stream_to_cnf(
+def _stream_to_cnf(
     stream: list[int], max_var: int, equivalences: bool
 ) -> tuple[list[list[int]], int]:
     """
@@ -325,8 +325,8 @@ def formula2cnf(
 
     Equivalences specify implications [False] or equivalences [True] between gates and corresponding clauses.
     """
-    seq, v_map = translate(formula)
-    cnf, root = stream_to_cnf(seq, len(v_map), equivalences)
+    seq, v_map = _translate(formula)
+    cnf, root = _stream_to_cnf(seq, len(v_map), equivalences)
     return cnf, root, v_map
 
 

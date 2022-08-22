@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Watched DPLL Algorithm. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_watched.php"""
 from dataclasses import dataclass
-from formula2cnf import formula2cnf, read_input, write_output
+from formula2cnf import get_cnf, read_input, write_output
 from argparse import ArgumentParser, Namespace
 from time import perf_counter_ns
 from typing import List, Optional
@@ -37,54 +37,7 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
         help="Output CPU time, number of decisions and number of unit propagation steps.",
     )
     args = parser.parse_args(args)
-    if args.input is not None:
-        if args.input.endswith(".sat"):
-            args.format = "SAT"
-        elif args.input.endswith(".cnf"):
-            args.format = "CNF"
-    if args.format is None:
-        args.format = "SAT"
     return args
-
-
-def parse_cnf(string: str) -> tuple[list[list[int]], int]:
-    lines = string.splitlines()
-    lines.reverse()
-    line = ""
-    while not line.startswith("p cnf "):
-        if not lines:
-            raise RuntimeError("Invalid formula. No 'p' line.")
-        line = lines.pop()
-    s_line = line.split(maxsplit=3)
-    try:
-        max_var = int(s_line[2])
-        num_clauses = int(s_line[3])
-    except:
-        raise RuntimeError(f"Invalid nbvar or nbclauses in '{line}'.")
-
-    cnf = []
-    try:
-        for line in lines[-num_clauses:]:
-            literals = list(map(int, line.split()))
-            assert literals[-1] == 0 and all(
-                0 < abs(l) <= max_var for l in literals[:-1]
-            )
-            cnf.append([*literals[:-1]])
-    except:
-        raise RuntimeError(f"Invalid clause: {line}")
-    return cnf, max_var
-
-
-def get_cnf(args: Namespace) -> tuple[list[list[int]], int]:
-    """Return cnf as list of clauses (tuples of ints - literals) and maximal variable."""
-    string = read_input(args.input)
-    if args.format == "SAT":
-        cnf, max_var, _ = formula2cnf(string, False)
-    elif args.format == "CNF":
-        cnf, max_var = parse_cnf(string)
-    else:
-        raise RuntimeError("Invalid format.")
-    return cnf, max_var
 
 
 @dataclass

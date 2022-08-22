@@ -47,7 +47,7 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
     parser.add_argument(
         "--lbd_limit",
         type=int,
-        default=2,
+        default=3,
         help="Initial limit on different decision levels in learned clauses.",
     )
     parser.add_argument(
@@ -145,7 +145,7 @@ class CDCL_watched_solver:
         cnf: list[list[int]],
         max_var: Optional[int] = None,
         conflict_limit: int = 128,
-        lbd_limit: int = 2,
+        lbd_limit: int = 3,
         heuristic: str = "default",
         assumption: Optional[list[int]] = None,
     ) -> None:
@@ -265,6 +265,8 @@ class CDCL_watched_solver:
         for ci, clause in enumerate(self.cnf):
             if ci not in sat_clauses:
                 lits.extend(clause)
+        if not lits:
+            return self.random_literal()
         for lit, _ in Counter(lits).most_common():
             if self.assignment[lit] is None:
                 return lit
@@ -516,11 +518,10 @@ class CDCL_watched_solver:
         self.solve_time += perf_counter_ns() - start
         return True, sorted(self.assigned, key=lambda i: abs(i))
 
-    def get_stats(self) -> tuple[float, float, int, int, int]:
-        """Return initialization time in s, solving time in s, decisions count and unit propagation steps."""
+    def get_stats(self) -> tuple[float, int, int, int]:
+        """Return time in s, decisions count and unit propagation steps."""
         return (
-            self.initialization_time / 1000000000,
-            self.solve_time / 1000000000,
+            (self.initialization_time + self.solve_time) / 1000000000,
             self.decisions,
             self.unit_prop_steps,
             self.restarts,
@@ -528,17 +529,16 @@ class CDCL_watched_solver:
 
 
 def get_string_output(
-    sat: bool, model: list[int], stats: tuple[int, int, int, int, int]
+    sat: bool, model: list[int], stats: tuple[float, int, int, int]
 ) -> str:
     ret = ["SAT" if sat else "UNSAT"]
     if model:
         ret.append(", ".join(map(str, model)))
     if stats:
-        ret.append("Initialization time: {:.3f} s.".format(stats[0]))
-        ret.append("Solving time: {:.3f} s.".format(stats[1]))
-        ret.append(f"Decisions: {stats[2]}.")
-        ret.append(f"Unit propagation steps: {stats[3]}.")
-        ret.append(f"Restarts: {stats[4]}.")
+        ret.append("Time: {:.3f} s.".format(stats[0]))
+        ret.append(f"Decisions: {stats[1]}.")
+        ret.append(f"Unit propagation steps: {stats[2]}.")
+        ret.append(f"Restarts: {stats[3]}.")
     return "\n".join(ret)
 
 

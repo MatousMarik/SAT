@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """DPLL Algorithm. Specification at http://ktiml.mff.cuni.cz/~kucerap/satsmt/practical/task_dpll.php"""
 from dataclasses import dataclass
-from formula2cnf import formula2cnf, read_input, write_output
+from formula2cnf import get_cnf, write_output
 from argparse import ArgumentParser, Namespace
 from time import perf_counter_ns
 from typing import Optional
-import sys, os
+import sys
 
 
 def parse_args(args=sys.argv[1:]) -> Namespace:
@@ -35,55 +35,8 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
         action="store_true",
         help="Output CPU time, number of decisions and number of unit propagation steps.",
     )
-    args = parser.parse_args(args)
-    if args.input is not None:
-        if args.input.endswith(".sat"):
-            args.format = "SAT"
-        elif args.input.endswith(".cnf"):
-            args.format = "CNF"
-    if args.format is None:
-        args.format = "SAT"
+    args = parser.parse_args()
     return args
-
-
-def parse_cnf(string: str) -> tuple[list[list[int]], int]:
-    lines = string.splitlines()
-    lines.reverse()
-    line = ""
-    while not line.startswith("p cnf "):
-        if not lines:
-            raise RuntimeError("Invalid formula. No 'p' line.")
-        line = lines.pop()
-    s_line = line.split(maxsplit=3)
-    try:
-        max_var = int(s_line[2])
-        num_clauses = int(s_line[3])
-    except:
-        raise RuntimeError(f"Invalid nbvar or nbclauses in '{line}'.")
-
-    cnf = []
-    try:
-        for line in lines[-num_clauses:]:
-            literals = list(map(int, line.split()))
-            assert literals[-1] == 0 and all(
-                0 < abs(l) <= max_var for l in literals[:-1]
-            )
-            cnf.append([*literals[:-1]])
-    except:
-        raise RuntimeError(f"Invalid clause: {line}")
-    return cnf, max_var
-
-
-def get_cnf(args: Namespace) -> tuple[list[list[int]], int]:
-    """Return cnf as list of clauses (tuples of ints - literals) and maximal variable."""
-    string = read_input(args.input)
-    if args.format == "SAT":
-        cnf, max_var, _ = formula2cnf(string, False)
-    elif args.format == "CNF":
-        cnf, max_var = parse_cnf(string)
-    else:
-        raise RuntimeError("Invalid format.")
-    return cnf, max_var
 
 
 @dataclass
@@ -241,27 +194,25 @@ class DPLL_adjacency_solver:
         self.solve_time = perf_counter_ns() - start
         return True, sorted(self.assigned, key=lambda i: abs(i))
 
-    def get_stats(self) -> tuple[int, int, int, int]:
-        """Return initialization time in s, solving time in s, decisions count and unit propagation steps."""
+    def get_stats(self) -> tuple[float, int, int]:
+        """Return time in s, decisions count and unit propagation steps."""
         return (
-            self.initialization_time / 1000000000,
-            self.solve_time / 1000000000,
+            (self.initialization_time + self.solve_time) / 1000000000,
             self.decisions,
             self.unit_prop_steps,
         )
 
 
 def get_string_output(
-    sat: bool, model: list[int], stats: tuple[int, int, int, int]
+    sat: bool, model: list[int], stats: tuple[float, int, int]
 ) -> str:
     ret = ["SAT" if sat else "UNSAT"]
     if model:
         ret.append(", ".join(map(str, model)))
     if stats:
-        ret.append("Initialization time: {:.3f} s.".format(stats[0]))
-        ret.append("Solving time: {:.3f} s.".format(stats[1]))
-        ret.append(f"Decisions: {stats[2]}.")
-        ret.append(f"Unit propagation steps: {stats[3]}.")
+        ret.append("Time: {:.3f} s.".format(stats[0]))
+        ret.append(f"Decisions: {stats[1]}.")
+        ret.append(f"Unit propagation steps: {stats[2]}.")
     return "\n".join(ret)
 
 
