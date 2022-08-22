@@ -218,27 +218,25 @@ class DPLL_watched_solver:
         self.solve_time = perf_counter_ns() - start
         return True, sorted(self.assigned, key=lambda i: abs(i))
 
-    def get_stats(self) -> tuple[int, int, int, int]:
-        """Return initialization time in s, solving time in s, decisions count and unit propagation steps."""
+    def get_stats(self) -> tuple[float, int, int]:
+        """Return time in s, decisions count and unit propagation steps."""
         return (
-            self.initialization_time / 1000000000,
-            self.solve_time / 1000000000,
+            (self.initialization_time + self.solve_time) / 1000000000,
             self.decisions,
             self.unit_prop_steps,
         )
 
 
 def get_string_output(
-    sat: bool, model: list[int], stats: tuple[int, int, int, int]
+    sat: bool, model: list[int], stats: tuple[float, int, int]
 ) -> str:
     ret = ["SAT" if sat else "UNSAT"]
     if model:
         ret.append(", ".join(map(str, model)))
     if stats:
-        ret.append("Initialization time: {:.3f} s.".format(stats[0]))
-        ret.append("Solving time: {:.3f} s.".format(stats[1]))
-        ret.append(f"Decisions: {stats[2]}.")
-        ret.append(f"Unit propagation steps: {stats[3]}.")
+        ret.append("Time: {:.3f} s.".format(stats[0]))
+        ret.append(f"Decisions: {stats[1]}.")
+        ret.append(f"Unit propagation steps: {stats[2]}.")
     return "\n".join(ret)
 
 
