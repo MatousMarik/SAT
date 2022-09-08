@@ -249,7 +249,7 @@ def _stream_to_cnf(
 
                     if equivalences:
                         cnf.append([-left, next_gate_index])
-                        cnf.append([-right, cnf])
+                        cnf.append([-right, next_gate_index])
 
                 stack.append(next_gate_index)
                 next_gate_index += 1
