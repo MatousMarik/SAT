@@ -38,7 +38,7 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
     )
     parser.add_argument(
         "-m",
-        "--minimal_literal",
+        "--minimal_variable",
         action="store_true",
         help="As a decision select unassigned variable with lowest number.",
     )
@@ -260,7 +260,7 @@ def get_string_output(
 if __name__ == "__main__":
     args = parse_args()
     cnf, max_var = get_cnf(args.input, args.format)
-    solver = DPLL_watched_solver(cnf, max_var)
+    solver = DPLL_watched_solver(cnf, max_var, args.minimal_variable)
     sat, model = solver.solve()
 
     result = get_string_output(
