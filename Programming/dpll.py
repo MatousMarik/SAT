@@ -234,7 +234,7 @@ def get_string_output(
 
 
 if __name__ == "__main__":
-    args = parse_args(["-c", "-v"])
+    args = parse_args()
     cnf, max_var = get_cnf(args.input, args.format)
     solver = DPLL_adjacency_solver(cnf, max_var, args.minimal_variable)
     sat, model = solver.solve()
