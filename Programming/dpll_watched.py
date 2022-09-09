@@ -36,6 +36,12 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
         action="store_true",
         help="Output CPU time, number of decisions and number of unit propagation steps.",
     )
+    parser.add_argument(
+        "-m",
+        "--minimal_literal",
+        action="store_true",
+        help="As a decision select unassigned variable with lowest number.",
+    )
     args = parser.parse_args(args)
     return args
 
@@ -85,7 +91,12 @@ class WatchedClause:
 
 
 class DPLL_watched_solver:
-    def __init__(self, cnf: list[list[int]], max_var: int) -> None:
+    def __init__(
+        self,
+        cnf: list[list[int]],
+        max_var: int,
+        minimal_decision_variable: bool = False,
+    ) -> None:
         start = perf_counter_ns()
         self.cnf = cnf
         self.max_var = max_var
@@ -93,6 +104,8 @@ class DPLL_watched_solver:
         self.w_lists: list[list[WatchedClause]] = list(
             [] for _ in range(max_var * 2 + 1)
         )
+
+        self.minimal_decision_variable: bool = minimal_decision_variable
 
         # satisfied literals
         self.assigned: list[int] = []
@@ -191,9 +204,13 @@ class DPLL_watched_solver:
             return False, None
 
         while self.unassigned:
-            # no heuristic, take first unassigned that "pops"
-            for lit in self.unassigned:
-                break
+            if self.minimal_decision_variable:
+                lit = min(self.unassigned)
+            else:
+                # no heuristic, take first unassigned that "pops"
+                for lit in self.unassigned:
+                    break
+
             # try lit
             if self.unit_prop(lit):
                 assigned.append(lit)

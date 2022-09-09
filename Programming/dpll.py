@@ -30,12 +30,18 @@ def parse_args(args=sys.argv[1:]) -> Namespace:
         help="Set input format to DIMACS. Will be automatically overwritten if input file is .sat or .cnf.",
     )
     parser.add_argument(
+        "-m",
+        "--minimal_literal",
+        action="store_true",
+        help="As a decision select unassigned variable with lowest number.",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
         help="Output CPU time, number of decisions and number of unit propagation steps.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(args)
     return args
 
 
@@ -48,7 +54,12 @@ class AdjacencyClause:
 
 
 class DPLL_adjacency_solver:
-    def __init__(self, cnf: list[list[int]], max_var: int) -> None:
+    def __init__(
+        self,
+        cnf: list[list[int]],
+        max_var: int,
+        minimal_decision_variable: bool = False,
+    ) -> None:
         start = perf_counter_ns()
         self.cnf = cnf
         self.max_var = max_var
@@ -56,6 +67,8 @@ class DPLL_adjacency_solver:
         self.a_lists: tuple[list[AdjacencyClause]] = tuple(
             [] for _ in range(max_var * 2 + 1)
         )
+
+        self.minimal_decision_variable: bool = minimal_decision_variable
 
         # satisfied literals
         self.assigned: list[int] = []
@@ -140,7 +153,7 @@ class DPLL_adjacency_solver:
                     # creating unit clause
                     for l in adj_c.list:
                         # finding unit literal
-                        if abs(l) in unassigned:
+                        if abs(l) in unassigned and l != -lit:
                             u_literals.append(l)
                             break
                 adj_c.counter -= 1
@@ -167,9 +180,13 @@ class DPLL_adjacency_solver:
             return False, None
 
         while unassigned:
-            # no heuristic, take first unassigned that "pops"
-            for lit in unassigned:
-                break
+            if self.minimal_decision_variable:
+                lit = min(unassigned)
+            else:
+                # no heuristic, take first unassigned that "pops"
+                for lit in unassigned:
+                    break
+
             # try lit
             if u_prop(lit):
                 assigned.append(lit)
@@ -217,7 +234,7 @@ def get_string_output(
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    args = parse_args(["-c", "-v"])
     cnf, max_var = get_cnf(args.input, args.format)
     solver = DPLL_adjacency_solver(cnf, max_var)
     sat, model = solver.solve()
