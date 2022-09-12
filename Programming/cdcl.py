@@ -495,6 +495,11 @@ class CDCL_watched_solver:
             while conflict:
                 conflicts += 1
 
+                decision_level = self.process_conflict(conflict, decision_level)
+
+                if decision_level < 0:
+                    return False, None
+
                 if conflicts >= self.conflict_limit:
                     # restart
                     conflicts = 0
@@ -506,11 +511,6 @@ class CDCL_watched_solver:
                     self.delete_learned_clauses()
                     self.unit_literals.clear()
                     break
-
-                decision_level = self.process_conflict(conflict, decision_level)
-
-                if decision_level < 0:
-                    return False, None
 
                 self.rollback(decision_level)
                 conflict = self.unit_prop(decision_level)
